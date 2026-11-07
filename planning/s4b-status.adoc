@@ -1,0 +1,141 @@
+= S4b: one certified batching transformation
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:toc:
+
+== Status and exact scope
+
+S4b is complete and independently reviewed. Claude confirmed closure with no remaining
+blockers after rerunning all checks and the native benchmark:
+link:s4b-claude-closure.txt[closure review]. Findings from
+link:s4b-claude-review.txt[the initial review] are resolved as recorded in
+link:s4b-review-resolution.adoc[the resolution]. The native P1 demo now includes the optimized
+entry `Example.Tenant.Batching.execute`. The first recognized shape is exactly:
+
+[source,graphql]
+----
+{ projects { tasks { project { ...checked P1 project selection... } } } }
+----
+
+This is a specialized lowering from checked selection structure to a Machine execution
+plan with paired response reconstruction. It does not mutate the generic Graph syntax
+or introduce a general graph optimizer. The original `Runtime.execute` remains the
+reference. The selected child uses its existing compiled graph and graph-indexed output
+plan unchanged. The specialized lowering stages root/projects and each parent's tasks,
+shares the selected Task.project load across all resulting task rows, then reconstructs
+every parent/task occurrence using the original filtered coordinates.
+
+Eligibility recognizes the exact surface shape, rechecks the retained child with
+`IR.lower`, and requires an actual `BatchCapability` and its key-sufficiency certificate
+for the selected backend. The operation was already checked. This deliberately excludes
+siblings at the three rewritten levels and other operation shapes. Excluded operations,
+absent capabilities and absent key certificates use the original Machine. Nested loads
+inside the retained child are not recursively optimized by this first pass.
+
+== Proof chain
+
+`Batch.lean` supplies stable first-key representatives, coordinate lookup, positional
+reconstruction and bounded chunk construction. The same certified key defines
+representatives, scatter correspondence and distinct count U. Its key-sufficiency law
+is scoped to one request, including immutable snapshot and principal. There is no
+cross-request cache. The regression rejects reuse across snapshots even when tenant
+and project ID keys match.
+
+`BatchWave.lean` emits actual `.batch` Machine suspensions. The driver invokes the
+present certified capability's `run`; its `exact` theorem proves this driver agrees
+with pointwise meanings. The targeted wave has no single-call fallback. A generic
+driver fallback exists for other fields, outside the reduced-count theorem. Batch
+results retain vector length and alignment. Deduplication then scatters to every
+original position, using the sufficient-key proof tied to the same single backend.
+`BatchRows.lean` retains parent/filtered-task coordinates across the whole wave.
+
+`BatchPlan.lean` stages and reconstructs the recognized operation. `optimized_reference`
+proves optimized execution equals a sequential staged reference for any deterministic
+adapter with the required capability. `reference_denotes` connects that staged reference
+to the original compiler semantics. `BatchExecution.optimized_runtime` therefore proves
+whole structured response equality with the existing S4 entry. `IR.lower_clean` and `IR.checked_unique` establish that clean checked operations
+are unique for a surface selection. `execute_eq_runtime_any` therefore covers the public
+dispatcher for every deterministic adapter, including fallback, without a domain
+agreement premise. For adapters agreeing with independent application bindings,
+`execute_authorized` and `execute_conforms` inherit the independent safety predicates. This includes data, field order, public error order and multiplicity, paths,
+and null propagation. The application theorem is inherited, not redefined.
+
+The output reconstruction has no deduplicated response positions: shared failures
+are expanded at each original occurrence. It uses the existing renderBranch/appendField
+completion algebra and unchanged compiled child output plan. This is why a computation
+can be shared while its response errors still appear separately.
+
+`BatchCost.prepared_rows_owned` and `prepared_input_pre` prove selected rows satisfy the
+Task.project parent precondition only for the pure generated-adapter run.
+`representative_pre` transfers that pure-run fact to representatives.
+`task_batch_compatible` proves the tenant contract's compatibility predicate (True for
+these fixed Unit arguments and one request). These are ingredient lemmas, not a Sat
+proof for the optimized machine under arbitrary permitted answers. No optimized fault
+safety is claimed. The native demo uses the exact deterministic driver. Generated bindings,
+independent domain resolvers, first-owned lookup semantics, and the batch/key certificate
+are unchanged.
+
+== Cost model
+
+`Calls machine n` counts actual Machine suspension constructors and quantifies over
+all answers at every suspension. It counts both single and batch calls; no selected
+primitive is hidden. `calls_count` relates it to executable `runCount` instrumentation.
+`load_calls`, `wave_calls` and `rows_wave_calls` prove an exact count, not merely a bound:
+
+----
+selected-stage primitive calls = ceil(U / B), B > 0
+----
+
+`load_bounded`, `wave_bounded`, and `rows_wave_bounded` prove all calls in the transformed
+stage are nonempty batch calls of at most B inputs. Empty waves issue zero calls.
+`sequential_calls` counts one primitive per original task occurrence. The count is per
+wave spanning all prepared parents, not independently per parent. Earlier Project.tasks
+calls, root loading, and retained child graph calls are outside this reduced-stage count.
+The full optimized response path still executes them. `BatchAccounting.lean` now
+connects the stage to the actual whole programs: `optimized_total` gives setup +
+ceil(U/B) + output, `reference_total` gives the same setup + occurrence count + the
+same output, and `total_savings` equates the whole-program reduction with the stage
+reduction. Setup/output are instrumented subprograms, including all their calls, not
+assumed constants. `dispatcher_total` attaches the accounting to recognized execution.
+The general accounting reference is the staged sequential program. Equality of its
+count with original Runtime.execute is kernel-pinned on the workload only; a general
+count correspondence remains S8. The shared-output equality requires the certified exact deterministic driver;
+arbitrary adversarial answers can change the output continuation's work. Multiple
+waves require summing their counts; no single global bound is claimed.
+
+`planning/s4b-call-benchmark.json` preserves the historical native Machine benchmark.
+Rerun with `scripts/check --benchmark batch`, which writes `.lake/benchmarks/s4b.json`.
+Five selected occurrences, three distinct keys, and capacities
+1/2/3/4 produce 3/2/1/1 batch calls versus five reference calls. The capacity-2 strict
+improvement is also kernel-checked. The benchmark now also counts the whole dispatched
+and original Runtime programs: capacity 2 gives 9 versus 12 calls (5 setup, 2 versus
+5 selected loads, and 2 child calls). `whole_path_counts` kernel-checks these values.
+This is a primitive-request model, not a wall-clock
+claim. The supplied pure capability is a pointwise lookup loop internally. Treating a
+primitive as one physical backend request requires a later backend implementation with
+one request per primitive and no retries; hidden lookup work is not counted here.
+
+== Validation and limits
+
+The default build and theorem audit include S4b. The complete check passed 517 proof
+audits and 31 compile-rejection tests, plus regeneration/mutation/semantic/native checks. Kernel examples cover repeated keys
+across parents, empty parents/waves, filtered foreign tasks, duplicate owned target IDs
+(first occurrence wins), foreign targets, missing targets, chunk boundaries, repeated
+per-item failures, exact nested filtered error paths, and unchanged excluded operations.
+Compile-rejection fixtures target wrong scatter, cross-snapshot reuse, zero
+capacity, and a missing batch capability. A mutation of the actual wave's scatter
+continuation sends every result to position zero; `wrong_wave_rejected` proves it differs
+from the real wave and `wrong_wave_loses_errors` demonstrates lost error occurrences.
+An additional rejection fixture attempts equality for this actual mutated wave. The native demo checks optimized/reference
+response equality before running the earlier demos.
+
+Run `scripts/check`, then `scripts/check --benchmark batch` after building.
+No external IO equivalence is claimed. Whole-batch transport failure is not treated as
+pointwise exactness, and arbitrary permitted framework-fault execution is not silently
+reordered. The S4 fault-safe sequential entry remains available. S5 is next after S4b
+closure: operation text/variables and named coercion at the resolver boundary. S6 retains
+certified effect handlers and transport integration. Before any faulting/external
+handler drives the optimized path, S6 must prove Sat for optimized preparation, owned
+representatives, compatibility, and fault-aware positional reconstruction. Whole-batch
+transport failure must have its own declared outcome and cannot be silently scattered
+as per-key failures. S8 retains broad scaling evidence.

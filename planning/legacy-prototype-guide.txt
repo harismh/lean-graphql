@@ -1,0 +1,233 @@
+Historical guide preserved from README.txt before the 2.0 documentation draft.
+Paths below are relative to the repository root. For current entry points, see README.md.
+
+Lean GraphQL — proof-oriented P2 execution and certified HTTP
+
+This repository develops schema-first GraphQL programs with kernel-checked contracts.
+The typed P1 execution path proves ownership, output shape and fault behavior; a separate
+P0 prototype demonstrates SDL generation and a LeanIO HTTP endpoint. P0 is not declared
+complete.
+
+The proof-first continuation is planned in planning/proof-first-roadmap.adoc. It puts
+a compositional application theorem before further language and transport expansion.
+S0 is complete and reviewed. Its independent model, response semantics, authorization trees, and proof examples
+are in Example/Tenant/. Scope and validation are recorded in planning/s0-status.adoc.
+S1 implements typed graph programs with checked compilation: universal S0 authorization
+and conformance, schema-indexed calls, acyclic regions, row reconstruction, and end-to-end
+pure response equivalence. See planning/s1-status.adoc for proofs and validation.
+Claude closed S1a-S1d with no remaining blocker; see planning/s1-claude-closure.txt.
+S4 adds the execution proofs below.
+The default build includes the S6d proofs and native typed demo; scripts/check.py audits
+all tenant/plan theorems.
+S2a adds checked AST/schema correspondence, canonical field adapters, snapshot-independent
+binding carriers, and backend-tied batch/key certificates. Claude confirmed closure;
+see planning/s2a-status.adoc and planning/s2a-claude-closure.txt. S2b now generates the independently checked binding route; Claude confirmed closure.
+See planning/s2b-status.adoc and planning/s2b-claude-closure.txt. The parametric compiler and universal whole-plan binding transport now compile.
+S3 adds resolver/node contracts, generic completion and response judgments, a bridge
+to independent S0 authorization, and an independent list-bound instance. Every compiled P1 plan now has a contract certificate
+that establishes each call precondition through its rows and captures. Claude closed S3;
+see planning/s3-status.adoc and planning/s3-claude-closure.txt. S4 now implements the shipped typed execution entry and local evidence for permitted
+framework faults. Claude closed S4; see planning/s4-status.adoc and
+planning/s4-claude-closure.txt. The generic interpreter
+refines plan denotation, and both tenant authorization and an independent list bound
+are proved through its contracts. Pure response equality under tenant-view filtering
+is also proved. The legacy P0 HTTP path is not certified by these P1 theorems.
+
+S4b adds a specialized Task.project batch-wave lowering with complete response equality,
+authorization/conformance inheritance, and a proved ceil(U/B) Machine-call count.
+Claude confirmed S4b closure; see planning/s4b-status.adoc for its supported shape and
+cost boundaries, and planning/s4b-claude-closure.txt for independent verification. The native
+primitive-call benchmark is python3 scripts/benchmark_s4b.py. Physical-request and
+wall-clock improvements are not claimed for the pointwise pure backend.
+
+S5 adds checked decoded operations, variables/defaults, named argument coercion,
+and a proof from input meanings through prepared execution to independent response
+semantics. Native parsed-query tests run in graphql-tenant. See planning/s5-status.adoc
+for the bounded profile and parser/HTTP proof boundaries. Claude confirmed closure
+with no remaining blockers; see planning/s5-claude-closure.txt. The S5 gate passed
+593 proof-audit reports and 35 compile-rejection tests. Full S6 is now closed below.
+
+S6a adds an effectful proof-carrying driver and a certified S5 execution entry.
+Transport failures are separate from per-key errors; caught exceptions become named
+public failures. See planning/s6a-status.adoc. S6b below closes optimized fault safety; the wire encoder
+and certified HTTP handler are implemented below. Claude closed S6a with no blockers;
+see planning/s6a-claude-review.txt. All 614 proof audits and 38 rejection tests pass.
+S6b is also closed; S6c/S6d and full S6 are now closed.
+
+S6b proves fault-contract Sat for the actual optimized batch Machine, including
+preparation, key reuse and original-position output reconstruction. The certified
+prepared entry now dispatches to this path. All 658 proof audits and 41 rejection
+tests pass; Claude independently closed the slice with no blockers. See
+planning/s6b-status.adoc and planning/s6b-claude-review.txt.
+
+S6c/S6d implement total ordered JSON encoding and a certified narrow HTTP handler.
+The authenticated core fixes the exact principal and snapshot in its output guarantee;
+the LeanIO route sends only certified application bytes or closed public error bytes.
+Run .lake/build/bin/graphql-certified 8081 with Authorization: Bearer tenant-1 (or
+Bearer tenant-2) for the in-memory demo. These fixed tokens are not production auth.
+See planning/s6c-status.adoc and planning/s6d-status.adoc for proofs, scope and commands.
+Claude independently confirmed no blockers remain in planning/s6cd-claude-closure.txt.
+Full S6 status is planning/s6-status.adoc: 696 proof audits, 48 compile-rejection
+fixtures, 30 certified HTTP checks and 35 legacy HTTP checks passed.
+Parser fidelity, external authentication/acquisition/store refinement, native IO and
+network delivery remain explicit boundaries.
+The legacy P0 profile and its limitations below are separate from this certified P2 route.
+
+1. Build and run.
+
+  scripts/lake build
+  .lake/build/bin/graphql-tenant
+
+The typed P1 demo executes the generated adapter through the same Runtime.execute entry used in the proofs.
+Regenerate it with python3 scripts/generate_s2b.py after building GraphQL.Plan.Generate.
+For the legacy P0 HTTP prototype:
+
+  .lake/build/bin/graphql-demo 8080
+
+In another terminal:
+
+  curl http://127.0.0.1:8080/graphql -H 'Content-Type: application/json' \
+    -d '{"query":"{ greeting user(id: 1) { name friends { name } } }"}'
+
+scripts/lake uses the downloaded project-local Lean 4.33.0 toolchain on this Mac,
+or an installed lake command on other systems. lean-toolchain pins the version;
+lake-manifest.json pins LeanIO. The toolchain and build artifacts are ignored.
+The server listens only on 127.0.0.1. HTTP is POST-only in this slice.
+
+2. Follow the example.
+
+For the P0 prototype, Example/Schema.lean contains its SDL source. graphql_schema emits the schema,
+its validity evidence, argument records, enums, closed interface/union sums, recursive
+input types, per-object resolver records, the complete Resolvers record, and dispatch
+conversion code. SDL is
+embedded in a separate Lean module so normal Lake dependencies track schema edits.
+
+Example/Resolvers.lean implements the generated interface without proof scripts.
+Generated SDL types live in Demo.Types, object contracts in Demo.Objects, and argument
+records in Demo.Args. Resolver entries, argument projections, and enum/abstract constructors use gql_
+prefixes (for example gql_name, gql_id, gql_Query and .gql_User), avoiding Lean
+constructor/recursor collisions. Input types retain the fixed mk constructor and
+input.x parameter labels; abstract constructors use a fixed ref parameter.
+Type/contract names _root_ and those beginning SDL_ gain an SDL_ escape prefix,
+leaving GraphQL wire names unchanged. Generated enums do not yet derive Repr/BEq.
+Helpers are isolated and field-pair names use an unambiguous separator.
+Object carriers are typed numeric references into application-owned storage in this
+spike. General application model-carrier bindings remain a P0 follow-up.
+
+The pure GraphQL.Machine requests a resolver result and resumes when the driver
+supplies it. The current driver is sequential. Arguments are coerced immediately
+before the individual resolver runs; failures use the field-error completion path.
+Prepared operations keep variables symbolic and can be reused, but no cache service
+is implemented yet. Responses retain selection order rather than using Json objects.
+
+3. Run the checks.
+
+  python3 scripts/check.py
+  python3 scripts/test_http.py
+  python3 scripts/benchmark.py
+
+The HTTP test owns a temporary loopback server and stops it afterwards. A sandbox
+must permit local sockets. The benchmark records its scope and measurements in
+planning/prototype-benchmark.json. It measures explicit schema evidence separately from
+the real graphql_schema path: 300 object types with ten String! fields each,
+including 3000 resolver contracts and dispatchers, without arguments or abstract/input
+types in that synthetic workload. It
+also compiles a ten-field resolver module against that large schema, changes one
+implementation, and verifies schema-artifact reuse. All generated benchmark files
+stay under .lake/benchmark; application source is not modified. These are single-run
+measurements, not general performance guarantees. On this Mac, full generation took
+27.589 seconds and peaked at 5.32 GiB; the resolver-only change took 0.612 seconds.
+The high generation memory cost remains open. Claude also measured a single
+300-field Query at 15.3 seconds and 15 mutually linked inputs at 9.3 seconds.
+A 1000-field Query and 30 linked inputs exceeded review limits of 45 and 40 seconds;
+those were stopped, not proven impossible to compile. Per-object size and input
+recursion are separate scaling concerns. A 30-object mixed-feature schema took
+4.4 seconds in the review. See the re-review report for scope and provenance. The earlier explicit-data-only
+measurement is preserved separately and does not describe the full generator.
+
+4. Read the guarantees narrowly.
+
+Kernel evidence and helper lemmas:
+  - checkSchema_sound reflects the decision procedure for Schema.ValidCore. This
+    small lemma is not a correctness proof for a separately implemented validator.
+  - nonNullList_bubbles: a bubbling element anywhere in a non-null list propagates.
+  - nullableBoundary_stops: the nullable-boundary definition reduces to null plus errors.
+  - Machine.bind_pending: bind preserves the pending constructor by definition.
+
+Schema.ValidCore explicitly checks the root, type-name uniqueness, field and argument
+uniqueness, reserved names, input-field argument exclusion, input/output reference
+kinds, union membership, and exact inherited
+interface fields. It does not represent all GraphQL schema-validity rules. Generated
+Demo.schema uses decide +kernel, not native evaluation. Tests/Axioms.lean audits these
+declarations. scripts/check.py allows only standard logical axioms and also checks
+source escape hatches; that source scan is not a complete dependency audit.
+
+Enforced by generated Lean types: required resolver entries, argument records,
+successful output nullability, enum constructors, and abstract-type membership.
+The generator remains a prototype: ValidCore acceptance is not a theorem that
+metaprogram elaboration will succeed for every accepted schema.
+The generated dispatcher performs checked input conversion and the executor checks
+encoded outputs. SDL is parsed and re-emitted as Lean declarations; there is no
+faithfulness theorem relating the original SDL to rawSchema, nor an agreement theorem
+for the entire generated bridge.
+The dynamic Call answer currently uses RawValue; a field-indexed answer family remains
+a follow-up, so the generic Machine type alone is not a resolver-contract theorem.
+
+For the legacy P0 execution path: parsing, operation validation, input coercion,
+selection merging, HTTP, JSON scanning, and its effect driver are tested, not proved.
+Its shared total response encoder now has the S6 ordered-JSON proof; that does not
+establish authorization or complete response semantics for P0.
+The proof of one completion helper does not establish full executor correctness.
+The kernel proof covers schema constraints; the native compiler, runtime, network,
+resolver effects, and custom-scalar meanings remain assumptions or tested boundaries.
+
+5. Know the supported profile and open work.
+
+Supported: one query operation, variables and variable defaults, aliases, repeated
+compatible fields, typed inline fragments without fragment directives, skip/include
+on fields, recursive object references,
+interfaces/unions, enums, recursive input objects, String/ID/Int/Boolean, list and
+field nullability, custom scalars represented as strings, and __typename.
+
+Explicitly unsupported: mutations, subscriptions, named fragments, multiple operations,
+SDL extensions/directives/descriptions/defaults, Float, full introspection, Federation,
+multipart/incremental delivery, generalized scalar/model bindings, block strings,
+a leading BOM, inline fragments without a type condition, and directives on fragments. Full schema
+validity (including required input cycles and interface covariance) is not checked.
+Repeated-argument comparison is order-sensitive and may reject semantically equivalent
+argument orders. Directive variables must be Boolean! even when a nullable Boolean
+has a non-null default; this stricter rule avoids a runtime null condition.
+Executable validation is a prototype implementation, not complete September 2025
+conformance. SameResponseShape is checked across disjoint branches and nested fields.
+Structural traversal and pairwise merge checks share a 100000-unit work budget.
+Documents are limited to 65536 characters, selections to 64 nesting levels and 4096
+siblings, and literal inputs to 128 nesting levels and 4096 items per list/object.
+The work budget can reject wide selections well below the parser limit (446 flat
+distinct-key demo selections were rejected in review). Merge validation currently
+compares all pairs before filtering by key. Units are not weighted by schema size;
+large-schema validation latency remains unmeasured. Defaults,
+argument values and variable types have separate bounded input/type depth checks.
+
+HTTP policy: JSON POST, negotiated application/graphql-response+json or application/json,
+400 for malformed input, 422 for envelope/validation/variable errors, and HTTP 200 for
+all completed executions including partial data. This is an explicit compatibility
+policy, not full conformance to the moving HTTP draft recommending 294. Transport
+request handling is deliberately limited. Request JSON rejects duplicate decoded keys,
+nesting over 32 levels, bodies over 65536 bytes, and oversized numeric tokens/exponents.
+Non-integral JSON variable numbers are unsupported. Resolver IO exceptions become
+sanitized field errors. Disconnect recovery is tested; cancellation of running resolver
+work, deadlines, concurrency, batching and request-scoped caching remain open.
+Resolver-call and response-size limits are also absent; validation limits do not bound
+list fan-out during execution. This is a development prototype, not a public-service
+readiness claim. Parse/validation diagnostics are returned to the requesting client.
+
+P0 follow-ups: full generated-to-generic type agreement, richer model carriers,
+complete schema constraints and diagnostics, measured cancellation semantics, bounded
+concurrent driver behavior, parser/validator hardening, and accurate proof coverage
+as more features are added. See planning/development-plan.txt for the longer roadmap.
+
+Claude review and resolution: planning/prototype-claude-review.txt records the original
+findings; planning/prototype-claude-rereview.txt records the broader re-review, and
+planning/prototype-claude-closure.txt confirms the final small fixes. No critical/high
+review findings remain. planning/prototype-review-resolution.txt tracks the fixes and
+the explicit next-milestone limitations.

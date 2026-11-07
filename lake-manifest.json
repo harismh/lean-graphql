@@ -1,0 +1,16 @@
+{"version": "1.2.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"url": "https://github.com/ecyrbe/leanio",
+   "type": "git",
+   "subDir": null,
+   "scope": "",
+   "rev": "0bb212d57f3dba2d76cf601f76a7c431a51c902e",
+   "name": "leanio",
+   "manifestFile": "lake-manifest.json",
+   "inputRev": "0bb212d57f3dba2d76cf601f76a7c431a51c902e",
+   "inherited": false,
+   "configFile": "lakefile.toml"}],
+ "name": "leanGraphql",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

@@ -1,0 +1,257 @@
+S3 IMPLEMENTATION REVIEW (including closure of the S2a H1 gate)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: proof-first-roadmap.adoc S3 (L440-476), the S3 entry gate (L446-455),
+s2a-claude-closure.txt E1-E4, and planning/s3-status.adoc.
+
+Read:
+- Example/Tenant/{OutputPlan,Compile,PlanTransport,ExecutionBridge,Contracts,ResponseContract,
+  S3Proofs}.lean
+- GraphQL/Plan/{Specifications,ResultSpec,Judgment,BoundedExample}.lean
+- Tests/Contract*.lean
+
+Ran:
+- python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s3.out:
+  - 277 audit reports. Only the allowed axioms appear.
+  - All 21 expected compile failures pass.
+  - The SDL and semantic tests pass.
+- Each Contract* fixture, by hand, to read its actual error message.
+No implementation file was edited, and no agents were started.
+
+VERDICT
+- S2a H1 (the S3 entry gate): CLOSED. E1, E2 and E3 are met. E4 is met for the contracts that
+  exist.
+- S3: NOT YET CLOSED. ONE S3 BLOCKER (B1).
+  The generic contract calculus is sound and complete over every node form. The tenant backend
+  bundle is proved for every agreeing adapter, and the response rules imply S0's AuthTree. But the
+  contracts are never applied to the actual program. No compiled tenant plan has a GraphProof, so
+  the central S3 property, that every reachable call meets its precondition because each row
+  carries the invariant the next step consumes, is never established for the application.
+- One high finding (H1) refines the output-bridge obligation so that S4 has something it can
+  discharge. It is an S4 entry condition.
+
+======================================================================
+S2a H1 GATE: CLOSED
+E1 MET. OutputFor, render, renderLeaf, renderBranch, branchCall, denoteResolved and compileFor are
+   parametric in carriers and scope. compile_for_correct holds for every resolved selection and
+   every typed meaning. The occurrence APIs are aliases, so nothing proved in S1 is weakened.
+E2 MET. MeaningTransport is a natural-transformation premise over carriers and scope.
+   leaf_transport, branch_rows_transport, branch_render_transport, branch_call_transport
+   (including the argument-error branch) and resolved_transport lead to compiled_transport, which
+   holds for every selection, row, token and path.
+E3 MET. adapter_transport derives MeaningTransport for any adapter with BindingAgreement, through
+   the manual record and binding_agrees_s1. actual_response_eq holds for every Request, every
+   checked operation and every agreeing adapter. The response of the record-carrier compiled plan
+   equals EvalSpec, and actual_response_authorized and actual_response_conforms follow from the
+   unchanged S0 theorems. every_valid_operation discharges "every valid P1 operation" through
+   lower_complete. There is no fixture restriction and no assumed final equality.
+E4 MET for the contracts that exist. Contract.tenant is stated over Binding.carriers and
+   Binding.Request. tenantResolvers_satisfy_contracts holds for any adapter with
+   BindingAgreement, and manual_contract_bundle instantiates it.
+
+======================================================================
+WHAT HOLDS IN S3
+- Generic calculus (Specifications.lean). There is a GraphProof or NodeProof constructor for each
+  of literal, map, pair, call, gather, scatter, fromLists, vectorLoad, each and mapRows.
+  - Calls and every vectorLoad index must establish `pre` from the current precondition.
+  - Every map, pair or literal needs an explicit closure proof, so an arbitrary map inherits
+    nothing (the ContractUnprovedMap fixture).
+  - Region bodies are proved against the actual row and captured values (args = (row,
+    captures.read values)).
+  - `each` relates inputs and outputs by RelatedLists, which preserves order and cardinality.
+  - mapRows relates them through RowIndex coordinates.
+  graph_proof_sound is proved by mutual induction over all constructors with BackendSatisfies,
+  and has no gaps.
+- Whole-list properties. Postconditions are arbitrary predicates on complete values.
+  result_collect_bound together with elementwise_is_insufficient shows that a cardinality bound is
+  expressible and does not follow from elementwise validity.
+- Tenant contracts:
+  - Expected is independent of the resolver record. It is written over Model-level domain
+    functions.
+  - Root preconditions are True, so user IDs are unrestricted; root_project accepts any key.
+  - Child preconditions require an owned parent, and foreign_parent_rejected shows that a record's
+    type does not supply this.
+  - Postconditions require exact domain behavior and ownership or the allowed public failure.
+    expected_owned proves the ownership half from the domain lemmas, for every field.
+- Response judgment. Judgment and ResponseJudgment are free of tenant facts, and
+  judgment_sound and response_judgment_sound are correct. ResponseContract.rules_preserve
+  implies the unchanged AuthTree, AuthField and AuthItems, and response_authorized gives
+  AuthorizedResponse. The framework rule admits declared framework failures, and
+  response_rule_example uses it non-vacuously (exhausted on `projects`).
+- Mutation evidence:
+  - removed_ownership_guard_rejected uses the ownership conjunct.
+  - swapped_scalar_rejected and unexpected_error_rejected are both present.
+  - The private-text fixture fails because ApplicationError has no string slot.
+- The scope statement is accurate: there are no executor, Sat, I/O, batching or cost claims.
+
+======================================================================
+S3 BLOCKER
+
+B1. No compiled tenant plan is ever certified, so the row invariants are never shown to feed the
+next call.
+(Compile.lean compileFor; Specifications.lean; Contracts.lean. Grep: GraphProof and NodeProof
+occur outside Specifications.lean only in BoundedExample.)
+The roadmap's S3 build requires this (L447-452): "Contracts cover plan nodes and region rows ...
+Each row value carries the invariant consumed by the output plan; resolver contracts alone are
+insufficient once computations form a DAG." The status claims "Every reachable call requires its
+business precondition" and "Child calls require an owned parent; this is a program obligation".
+The calculus does let such a requirement be stated. But nothing shows that the program the
+application actually runs meets it.
+- tenantResolvers_satisfy_contracts concerns the backend only.
+- The only GraphProof is BoundedExample.plan_certificate: one call node whose precondition is True,
+  with no rows, regions, captures or branchRows.
+The ownership chain is therefore unproved. That chain is: Projects or Project.tasks output satisfies
+OutputInvariant; branchRows preserves it; the `each` body precondition holds; the child call's
+`pre` (an OwnedProject or OwnedTask parent) holds.
+The roadmap also calls the precondition a program obligation (L472-475): "A stronger precondition
+requires a proved guard". Without a certificate, that obligation is never discharged anywhere.
+
+Fix:
+1. Prove a certificate for every compiled plan, generic over the resolved selection, by
+   induction on IR.Resolved following compile_for_correct:
+     theorem compiled_certificate (resolved : IR.Resolved object selection) :
+       GraphProof Contract.tenant (compileFor Binding.carriers Binding.Request resolved).graph
+         (fun v => Contract.ObjectInvariant v.2.1 (objectId object) v.1)
+         (FrameInvariant resolved)
+   - FrameInvariant records, for each OutputFor reference, that the outcome read satisfies `post`
+     (and so Expected and AllowedOutcome).
+   - It records that each region's frames are RelatedLists to branchRows of that outcome, with
+     the child FrameInvariant holding at each row.
+   The key lemma: AllowedOutcome for a branch output implies ObjectInvariant for every element of
+   branchRows. The argument-error branch of callNode, a map that ignores the backend, closes
+   trivially. The root carrier (Unit) has the invariant True.
+2. Compose it with graph_proof_sound and tenantResolvers_satisfy_contracts:
+   for every agreeing adapter, Request, and checked operation, FrameInvariant holds of the
+   denoted frame. That gives exactly the "every call issued had its precondition" property, with
+   the token tied to the request.
+3. Add one negative fixture showing the certificate is not vacuous. Take a hand-built graph that
+   calls Project.title on a literal foreign Project record, or that bypasses branchRows and
+   iterates over an unfiltered literal list. Prove that its `each` or call precondition fails.
+   For instance, prove ¬ NodeProof for that node under P = the root invariant, by refuting `ready`
+   at a concrete value.
+This is pure, plan-level work. It needs no executor, so it belongs in S3, not S4.
+
+ADDENDUM: titleGraph, title_graph_certificate and title_graph_behavior (added during review)
+Checked; S3Proofs builds. This is a valid tenant GraphProof, and title_graph_behavior correctly
+holds for every agreeing adapter through graph_proof_sound. It does not resolve B1:
+- It is a single call node, so no row, region, capture or branchRows step is involved.
+- The owned-parent precondition is an assumption in P (`OwnedProject ... values.1`). It is not
+  derived from an earlier output. B1 is exactly the derivation of that premise from a prior
+  node's postcondition through a region row.
+The status file assigns general compiled-operation certificates to S4. I disagree. The roadmap's
+S3 build text requires that contracts cover region rows and that each row carry the invariant
+the next step consumes, and building that certificate is pure plan-level work that needs no
+executor. S4's own work is Sat over Machine and the interpreter.
+
+Minimum for S3 closure, if the general theorem is deferred: one compiled, region-bearing
+certificate in which every child precondition is derived. Take the compiled plan for
+`projects { title tasks { project { id } } }`, or `projects { title }` at the very least.
+- Its precondition is only the root invariant (True).
+- The ownership facts needed for Project.title, Project.tasks and Task.project come from the
+  Projects and Project.tasks postconditions, through branchRows and the `each` body proofs.
+- Prove its behavior for every agreeing adapter through graph_proof_sound.
+- Add the negative fixture from step 3.
+The general compiled_certificate (step 1) then becomes an S4 entry condition rather than an S3
+blocker. Record that decision in the roadmap.
+
+======================================================================
+HIGH: S4 entry condition
+
+H1. OutputBridge restates the final theorem, and the local rules mirror AuthTree.
+(ResponseContract.lean:18-86, 89-94)
+- Rule is a constructor-for-constructor re-indexing of AuthTree, AuthField and AuthItems. Each
+  rule asks for the same snapshot-computed evidence (projectOccurrence ... = some r, the
+  taskOccurrences list) rather than node or row evidence. So rules_preserve is a renaming. That is
+  legitimate, since AuthTree stays the independent target, but it adds no bridge content.
+- OutputBridge render selection s p is ∀ op, Satisfies s p (selection op) (render op). That is
+  AuthorizedResponse in rule form, stated about the final response. It does not break down into
+  the per-constructor obligations that output reconstruction would discharge. Roadmap L456-457 has
+  S3 define the bridge obligations and S4 discharge them, and the S4 text (L501-503) insists that
+  "a generic framework theorem alone is not that bridge".
+- A real representation gap stays implicit. Contracts and plans use record carriers, while Rule
+  goals use occurrences (Context s). Building a rule derivation from rendered records means
+  recovering the occurrence at each position: the exact Expected lists give
+  projectOccurrences.map value, and so on. With duplicate equal records, only positional
+  correspondence, not the record values, identifies the occurrence.
+Fix (before S4 starts on output reconstruction): state the obligation at render granularity, on
+top of B1's FrameInvariant.
+  - Define RowFor request : carriers o → Context s → Prop as positional correspondence, the Nth
+    record row against the Nth occurrence from Expected's occurrence-level lists.
+  - State: render over any frame satisfying FrameInvariant, with frame rows related by RowFor,
+    yields a tree with a Rule derivation for (.fields ctx selection path).
+  - Prove it for the deterministic contracts in S3 if possible; it is pure.
+  - S4 then has to show only that its interpreter produces such frames, including the declared
+    framework-failure extension.
+  - Keep the current OutputBridge as the corollary.
+
+======================================================================
+MEDIUM
+M1. ResultSpec is not connected to the program. (ResultSpec.lean; BoundedExample.lean)
+    - The tenant does not instantiate ResultSpec. Contracts.lean imports it and never uses it.
+    - The output plan's render is never shown to preserve any ResultSpec.
+    - In BoundedExample, plan_certificate, completed_bound and response_bound are three
+      unconnected facts. completed_bound concerns a literal replicate list, not the plan's
+      denotation, and ResponseRule is unrelated to the plan's output.
+    The completion rules are therefore only exercised on literals. Compose them: the plan's call
+    outcome, then the collect completion, then the response judgment, in one theorem. S4's
+    items(first:) acceptance needs exactly that composition. Its fault-safety part is S4, but the
+    pure composition can be shown now.
+M2. The ownership mutation tests an output value, not a mutated implementation.
+    removed_ownership_guard_rejected refutes `post` on one forged result. The acceptance text
+    (L478-479) concerns removing the check from the resolver. Add a mutated backend, for example
+    `project` searching by ID without the tenant test, as an adapter or Meanings, and prove
+    ¬ BackendSatisfies Contract.tenant for it, using the Checks snapshot, where a foreign
+    "shared" project precedes the owned one.
+M3. The ContractRemovedGuard compile fixture fails on the exactness conjunct (rfl against
+    Expected), not on ownership. That fixture would still fail if the ownership conjunct were
+    deleted from `post`. The positive theorem does use ownership, so this is diagnostic only. Pin
+    the fixture to the ownership conjunct. For example, assert AllowedOutcome for the forged
+    value, or pin "OwnedProject" or "tenant" in the expected diagnostic.
+
+LOW
+L1. Contracts.compatible is True and is not required by NodeProof.vectorLoad. That is documented,
+    and correct while vectorLoad denotes pointwise single calls. S4b and S6 must require it when a
+    real batch call is issued.
+L2. The tenant post demands exact equality with Expected, so ownership is implied by exactness.
+    For the deterministic backend that is correct and strong. The S4 fault extension must
+    relax it to `exact ∨ declared framework failure`, keeping exact rows on success. Otherwise row
+    invariants for later calls are lost. Record that shape now.
+L3. The status file says "Identity-region certificates exercise capture and coordinate
+    preservation". They do, but only on empty bodies (`.nil`). After B1, cite the compiled
+    certificate instead.
+
+======================================================================
+S3 BLOCKERS VS S4 OBLIGATIONS
+S3 (must close S3): B1. At minimum, the compiled certificate with region-derived preconditions
+from the addendum; titleGraph alone does not satisfy it.
+Recommended in S3: M1-M3, plus H1's statement, and its pure proof if feasible.
+S4 obligations (recorded; not S3):
+- Machine LawfulMonad and Sat rules.
+- The sequential interpreter equals plan denotation for each, gather, scatter, vectorLoad and
+  mapRows.
+- Output completion discharges H1's render obligation. Deterministic success is already given by
+  actual_response_eq.
+- Fault-permitting contracts as explicit extensions (L2), with the framework rule already present.
+- The items(first:) list-bound instance through the executor.
+- The argument-error branch issues no call (already true in the plan).
+Later: S2b argument names and layouts, S4b compatible and batch strategy and cost, S5 coercion,
+S6 effectful batch interface and handler.
+
+ACCEPTANCE JUDGMENT (roadmap L476-479)
+- A proved bundle, not an axiom: MET (tenantResolvers_satisfy_contracts, manual_contract_bundle).
+- Removing an ownership check breaks an obligation: PARTIAL. The output-value refutation exists;
+  a mutated implementation does not (M2).
+- Projecting the wrong field breaks an obligation: MET (swapped_scalar_rejected, fixture).
+- Private failure text breaks an obligation: MET (type-level; no string slot).
+- The spec interface admits an independent list-bound instance with no tenant facts: MET for the
+  interface. Composition is weak (M1).
+- Contracts cover plan nodes and region rows, and each row carries the invariant consumed by the
+  output plan: NOT MET for the application (B1).
+
+ORDER OF ACTION
+1. B1: the compiled certificate, its composition with backend satisfaction, and a negative
+   fixture.
+2. M1-M3 in the same pass.
+3. H1: state the render-level obligation before S4's output proof.
+4. Then request S3 closure.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s3-claude-review.txt

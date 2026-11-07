@@ -1,0 +1,214 @@
+INITIAL COMMIT REVIEW (pre-commit release preparation)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Scope: the prospective first commit on `main`, which is everything that
+`git ls-files --others --exclude-standard` lists. Particular attention to LICENSE,
+RELEASE-POLICY.adoc, the README scope changes, .gitignore, .gitattributes, and the
+superseded notice in planning/release-2.0-draft.md (added mid-review). This is not a
+1.0 release review. The version is 0.0.1 and there is no CI, both intentionally.
+
+CHECKS PERFORMED (read-only; nothing staged, committed or tagged)
+- Repository state:
+  - `git status`: branch main with no commits yet, and an empty index.
+  - 260 untracked, unignored files across these paths: Example 75, planning 67, Tests 52,
+    GraphQL 40, Harness 12, scripts 2, tools 1, and the root files (.gitattributes,
+    .gitignore, LICENSE, README.md, RELEASE-POLICY.adoc, GraphQL.lean, Main.lean,
+    CertifiedMain.lean, lakefile.toml, lake-manifest.json, lean-toolchain).
+  - `git status --ignored`: only /.lake/ and /.tools/ are ignored, and `git check-ignore -v`
+    confirms the rules. No .DS_Store, editor files, .olean files, __pycache__, .claude or
+    planning/scratch|transcripts|reviews/raw directories exist in the candidate set.
+  - `git config user.name` = Haris, which matches the LICENSE copyright line.
+- Material scan over all 260 files:
+  - Secret-like patterns (api key, password, private keys, ghp_, sk-): one match only,
+    Tests/ContractPrivateFailure.lean's deliberate "database password: secret", which is a
+    redaction fixture.
+  - No email addresses.
+  - No file is binary. `file` mislabels one text file, and I read it.
+  - The largest file is planning/proof-first-roadmap.adoc at 67 KB.
+  - No CRLF line endings, and every file ends with a newline.
+  - Only scripts/check and scripts/lake are executable, which is correct.
+  - Local paths (/Users/..., /private/tmp) appear only in planning review reports and in
+    plan-draft.txt; see L4.
+  - The only machine metadata is "platform": "macOS-27.0.1-arm64..." in the benchmark JSON.
+- I read the full text of LICENSE, RELEASE-POLICY.adoc, README.md, .gitignore,
+  .gitattributes, lakefile.toml, lake-manifest.json and lean-toolchain, plus the head of
+  planning/release-2.0-draft.md.
+- Stable-API inspection:
+  - Every declaration in GraphQL/Schema.lean (127 lines), GraphQL/Response.lean (112) and
+    GraphQL/Machine.lean (25), including their import graph.
+  - None of them has a private or protected declaration.
+- Stable-API consumer probe:
+  - .lake/review5/StableConsumer.lean imports only the three stable modules, then builds a
+    Schema, #checks checkSchema_sound, nonNullList_bubbles and Machine.bind_pending, and
+    #evals Completion.errors and jsonString.
+  - Run with `scripts/lake env lean` against the existing build. It elaborated cleanly.
+  - This is not the separate Lake-consumer package the release policy requires before
+    tagging.
+- Dependency license: .lake/packages/leanio/LICENSE is MIT (Copyright (c) 2026 ecyrbe),
+  which is compatible with the MIT project license and the "dependencies retain their own
+  licenses" wording.
+- Cross-document consistency:
+  - I grepped the candidate set for "2.0", "1.0", "stable API", semver, license and
+    copyright wording, and for links to release-2.0-draft.
+  - Nothing in README.md, RELEASE-POLICY.adoc, planning/*.adoc or Harness/README.md still
+    presents 2.0 as the release.
+  - Nothing links to the draft as current.
+- No builds, tests or gates were run. I did not repeat `scripts/check --all`; the last full
+  gate is in planning/lean-harness-claude-closure.txt, and no source changed since then
+  apart from documentation and the new root files. A process listing found no lake, lean or
+  graphql process running. No process was terminated, no agent was started, and no file was
+  edited apart from this report and the scratch probe under .lake/review5 (which is ignored).
+
+VERDICT: READY FOR THE INITIAL COMMIT. NO BLOCKERS.
+- The license is the standard MIT text, unaltered.
+- The ignore rules keep local toolchains and build output out of the commit.
+- No secrets or private material are in the commit candidate. The only local items are the
+  paths in L4.
+- The intended 1.0 promise is narrow and honest. It names three small modules as stable,
+  keeps everything else experimental, and separates kernel-checked theorems, tested
+  behavior, external contracts and trusted components, consistently with README.md and the
+  S6 status documents.
+- One Medium wording issue (M1) and a few Low items should be fixed before a 1.0 tag. None
+  of them blocks a 0.0.1 initial commit.
+
+LICENSE
+- The text matches the MIT License word for word: the permission grant, the notice
+  condition and the warranty disclaimer are all unaltered.
+- "Copyright (c) 2026 Haris and lean-graphql contributors" is acceptable. "contributors"
+  is a common, if legally loose, attribution. If you want a precise record of ownership,
+  keep it to "Haris" and rely on Git history.
+- README and RELEASE-POLICY both link LICENSE, and both say MIT.
+- There are no SPDX headers in the sources. That is optional, and MIT does not require
+  them.
+
+RELEASE-POLICY.adoc AND README SCOPE
+Strengths:
+- The stable surface is explicitly limited to declarations defined in Schema, Response and
+  Machine.
+- Re-exports through `import GraphQL` are explicitly not made stable.
+- Proof terms, unfolding and generated names are excluded.
+- The toolchain stays pinned, and incompatible toolchain moves need a major release.
+- The certified route's profile matches README lines 209-211 and s5/s6d (one query
+  operation; no aliases, fragments or directives).
+- The trust boundary matches README's coverage table: the parser and HTTP are tested, not
+  proved; the kernel and native runtime are trusted; network, liveness, concurrency and
+  performance are unproved; the demo credentials are not production.
+- The manual release gate is honest about having no CI.
+- The README wording stays "intended" and "developer-preview" and keeps 0.0.1. Nothing
+  claims a release.
+
+MEDIUM
+M1 The stable module GraphQL/Response.lean depends on an experimental module.
+   - It imports GraphQL.Plan.WireScalar, and its stable `jsonString` (and therefore
+     `ResponseValue.encode`, `encodeCompletion` and `requestError`) is defined as
+     `Plan.WireScalar.quote`.
+   - Under the current wording, WireScalar is experimental. A change to
+     WireScalar.quote/escapeChar would change the observable output of stable functions,
+     and the policy does not say whether that counts as a "documented semantics" change.
+   - Every `import GraphQL.Response` also brings GraphQL.Plan.WireScalar.* into scope.
+     Downstream users may come to rely on those names without any stability guarantee.
+     Your re-export sentence covers this only for `import GraphQL`.
+   Recommended, before 1.0 (not before this commit), one of:
+   (a) state that the behavior of stable declarations is stable whatever modules implement
+       it, and that transitive imports of stable modules are not themselves stable; or
+   (b) promote WireScalar.quote, its Quoted/Escaped relations and quote_correct to the
+       stable list; or
+   (c) give Response.lean its own definitions.
+   Option (a) is the smallest edit.
+
+LOW
+L1 Typeclass instances are not mentioned.
+   - Stable types derive Repr, BEq, DecidableEq and Inhabited, and Schema.lean also declares
+     two Decidable instances and Machine.lean a Monad instance.
+   - Downstream code depends on these instances existing, but the policy lists only
+     constructors, fields, function types and theorems. Their instance names are
+     compiler-generated and therefore excluded.
+   - Suggest: "the availability of their instances (names excluded)". Also mention default
+     field values, such as Schema.query := "Query" and Completion.value's errors := [].
+L2 Guarantee preservation in minor releases is ambiguous.
+   - "Each release must preserve this chain or explicitly narrow its claims before
+     publication; a loss of a documented guarantee is not a compatible 1.x change." This can
+     be read as allowing a 1.x minor release to narrow claims, provided it does so
+     explicitly.
+   - Say directly whether narrowing a reference-application guarantee requires 2.0. Also say
+     how that interacts with the reference-application APIs being experimental: the
+     guarantees are stable, but their Lean names are not.
+L3 Small undefined terms.
+   - "compatible upgrades" of the toolchain: suggest "upgrades under which code within the
+     compatibility promise still elaborates".
+   - The release gate's "minimal Lake consumer" will need the package name `leanGraphql` and
+     the git/rev form of `require`. That is worth one line in the policy or release notes.
+L4 Local paths in committed review reports.
+   - About 33 planning/*claude*.txt files end with "REVIEW COMPLETE /Users/hareisu/...".
+     Several, including my own lean-harness, s6b and s6cd reports, cite /private/tmp log
+     paths. planning/plan-draft.txt:3 records the workspace path.
+   - This exposes a macOS account name (`hareisu`, different from the copyright name) and
+     paths that do not resolve for anyone else.
+   - It is not secret, and the policy says to keep reviews verbatim, so preserving them is
+     defensible. If you'd rather not publish the account name, a mechanical path rewrite
+     before the first commit is the only cheap moment. It is your call; I did not edit
+     them.
+L5 .gitattributes wording and line endings.
+   - The comment "Exclude disposable agent material even if explicitly added to Git" is
+     accurate only for `git archive`. export-ignore does not keep such files out of the
+     repository or out of clones. Suggest "Exclude ... from source archives (git archive)
+     even if ...".
+   - Optional: add `* text=auto eol=lf`, or at least `scripts/* text eol=lf`, so a Windows
+     checkout with autocrlf cannot break the POSIX bootstrap scripts. Today every file has
+     LF endings.
+L6 planning/release-2.0-draft.md (follow-up included).
+   - The new notice is clear: it is marked historical, links ../RELEASE-POLICY.adoc (which
+     resolves), and says it is not the current announcement. The retained body already said
+     "2.0" was a working name and not a semantic version. Nothing else links to the draft or
+     presents it as current. No contradiction remains.
+   - Cosmetic: the H1 still reads "2.0 direction (release draft)". Consider adding
+     "(historical)" to the title so that search results and file listings do not mislead.
+   - "the intended release is now 1.0" is fine as it stands.
+
+CONTRADICTIONS BLOCKING THE INITIAL COMMIT
+None found.
+- Version: 0.0.1 in lakefile.toml, README and the policy.
+- Toolchain: v4.33.0 in lean-toolchain and README.
+- LeanIO rev: the same in lakefile.toml and lake-manifest.json.
+- Gate counts: README's 696/48/30/35 match the S6 and harness closures.
+- Python: no current document requires it.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/initial-commit-claude-review.txt
+
+FOLLOW-UP (2026-11-07, documentation-only edits)
+Read: RELEASE-POLICY.adoc (in full), .gitattributes (in full), and the head of
+planning/release-2.0-draft.md.
+Checked:
+- `git check-attr -a scripts/check scripts/lake` gives text: set and eol: lf.
+- `git status`: main still has no commits and an empty index.
+No tests were run, as agreed for documentation-only changes. No files were edited apart from
+this appended section.
+
+M1 RESOLVED.
+   - The observable behavior of stable declarations is now covered "even when an experimental
+     module implements it, including the output of response encoding".
+   - "Importing `GraphQL` or a stable module does not make its transitive imports stable"
+     covers the GraphQL.Plan.WireScalar names that GraphQL.Response brings in.
+L1 RESOLVED. The policy now covers default argument and field values, and the availability of
+   typeclass instances (instance names excluded).
+   Cosmetic: the sentence now reads "constructors, structure fields, function types, and
+   theorem statements, default argument and field values, and ...". Move the first "and" so
+   that it reads "function types, theorem statements, default ...".
+L2 RESOLVED. Every 1.x release must preserve the chain. Narrowing a guarantee requires a
+   major release and a release note. The experimental status of theorem and API names
+   explicitly does not waive this, and the guarantees and the names are clearly separated.
+L3 RESOLVED.
+   - "Compatible upgrades" is now defined as upgrades under which code within the promise
+     still elaborates.
+   - The consumer gate requires `leanGraphql` from its Git URL at the exact candidate
+     revision, not from this checkout's build artifacts.
+L4 ACCEPTED. The local paths are retained as original provenance. They are not credentials,
+   and this is consistent with the policy of keeping reviews verbatim.
+L5 RESOLVED. The comment now says "from git archive". `/scripts/* text eol=lf` is in effect
+   for both bootstrap scripts.
+L6 RESOLVED. The H1 now reads "2.0 direction (historical release draft)".
+
+FINAL VERDICT: APPROVED FOR THE INITIAL COMMIT.
+- No blockers and no Medium issues remain. One wording nit in L1 is optional.
+- This approves only the repository contents for a 0.0.1 initial commit. It is not a 1.0
+  release approval. The policy's manual release gate (a full `scripts/lake test -- --all` on
+  a clean checkout, plus the separate Lake consumer) still applies before any tag.

@@ -1,0 +1,36 @@
+S4 review resolution — 2026-11-05
+
+First review: s4-claude-review.txt. No blockers or high findings; S4-1..S4-5 met.
+
+M1: list_completion_contract now assumes the selected element nullability rather than
+always false. legitimate_null_element exercises an actual successful null in a nullable-
+element list. ItemsExample.complete now runs its success rows through the shared
+completeList false false function. collect_success, list_completion_success and
+ItemsExample.complete_success prove the simplification, and the existing Sat bound
+still comes from the contract. Status explicitly limits executed schemas to non-null
+elements; all other combinations are reusable library results for expanded schemas.
+
+M2: Machine.lean now exports runStateMachine and sat_run_state for arbitrary pure
+state transitions with per-call validity. S4Proofs includes varyingResolver, its contract,
+differing_duplicate_outcomes (only the second equal row faults), and
+stateful_fault_authorized. Sat's per-occurrence variation is now exercised in the audited
+source tree rather than only in the review's scratch probe. IO certification remains S6.
+
+L1: Rename ExecutionSwallowedFault to SpecSwallowedFault; update its rejection pin.
+Also add swallowedExecution, a changed actual execution/reconstruction that removes
+errors, and mutated_renderer_rejected proving its real faulting output nonconforming.
+
+L2: Status explicitly identifies ItemsExample as standalone example code, built through
+the aggregate and intentionally not part of the umbrella API.
+L3: Status states the native demo uses fixed fixtures, not a request-serving endpoint.
+L4: A comment on deterministic_execution_contract explains that the proved manual
+adapter witnesses exact-contract consistency; the Sat statement is driver-independent.
+
+Validation: python3 scripts/check.py, 396 audits (391 discovered + 5 existing), 23
+rejection tests, native P1 demo, semantic and SDL tests. Claude independently reran
+these checks and confirmed closure in s4-claude-closure.txt.
+
+Remaining boundaries: S6 external handlers must supply actual store/snapshot refinement
+evidence; a postcondition annotation alone is insufficient. The view equality theorem
+is deterministic and response-only. S4b must issue certified batch calls with compatible
+premises and prove the cost bound; current vectorLoad remains pointwise.

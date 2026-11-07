@@ -1,0 +1,43 @@
+S3 review resolution — 2026-11-05
+
+B1: CompiledContract.lean now proves compiled_certificate for every IR.Resolved
+selection over the actual compileFor graph. Each call precondition is discharged;
+branch_rows_owned supplies ownership to childIH at each row with the actual captured
+request. The exact-frame postcondition equates all outputs, including ordered nested
+frames, to the independent Expected graph computation. This is stronger than separate
+projection equalities and does not assume any final response property. The graph
+certificate is constructed by compiler induction, not inferred from response equality.
+compiled_frame_invariant composes it with tenantResolvers_satisfy_contracts for every
+agreeing adapter. foreign_call_uncertifiable uses the generic ready inversion theorem
+to refute a certificate whose precondition accepts a literal foreign parent.
+
+H1: OutputEvidence.lean defines explicit source-occurrence RowFor and ordered RowsFor.
+branch_rows_correspond retains positions through the occurrence-to-record transport;
+there is no search for occurrences by record equality. render_frame_evidence takes
+an arbitrary certified compiled frame, explicit occurrence correspondence and ownership,
+and proves existence of a response-rule derivation with erasure equal to actual render.
+This is proved, for clean deterministic plans, using transport and the independent
+S0 evaluation route. It has no final response premise. OutputBridge remains only a
+corollary shape. S4 still must connect the actual executor and fault extension to these
+frame/render obligations, rather than assuming OutputBridge.
+
+M1: BoundedExample.program_completion_response now connects the actual graph output
+(runRows) to generic completion and ResponseJudgment in one theorem. The call graph's
+bound certificate remains independent. S3Proofs.title_completion_contract explicitly
+instantiates ResultSpec from an actual tenant scalar postcondition and renderLeaf.
+
+M2: unguardedAdapter actually replaces Query.project with an ID-only list search.
+unguarded_backend_rejected proves it fails BackendSatisfies using the foreign-first
+shared-ID snapshot.
+
+M3: ContractRemovedGuard now asserts only AllowedOutcome for the foreign object, so
+its failure directly tests the ownership conjunct. The check harness expects the
+false tenant proposition diagnostic.
+
+L1: Pointwise vectorLoad versus real batch compatibility remains explicit in status.
+L2: S4 fault contracts must admit exact domain success OR declared framework failure,
+retaining exact success rows. Recorded in status.
+L3: Status now cites the universal compiled certificate, not just empty-body examples.
+
+Validation: python3 scripts/check.py; passed 302 audits (297 discovered + 5 existing)
+and 21 rejection fixtures. Claude independently verified these results and closed S3 in s3-claude-closure.txt.

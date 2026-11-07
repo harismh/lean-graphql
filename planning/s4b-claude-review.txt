@@ -1,0 +1,204 @@
+S4b REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: roadmap "S4b Prove one batching transformation", planning/s4b-status.adoc,
+and the original provable graph-program goal.
+
+Read in full:
+- GraphQL/Plan/Batch.lean, BatchWave.lean, BatchRows.lean.
+- Example/Tenant/BatchPlan.lean, BatchExecution.lean, BatchCost.lean, S4bProofs.lean, Demo.lean.
+- Tests/BatchWrongScatter.lean, BatchCrossScope.lean, BatchZeroCapacity.lean,
+  BatchMissingCapability.lean.
+- scripts/benchmark_s4b.py and planning/s4b-call-benchmark.json.
+- Binding.taskProjectKey and taskProjectBatch in Bindings.lean, unchanged since S2b.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s4b.out:
+- 504 audit reports: 430 with axioms (propext, Quot.sound, Classical.choice only) plus 74 that
+  use no axioms. No sorryAx.
+- All 30 expected compile failures pass, including the four Batch* fixtures.
+- The generator, semantic and native checks pass. The native demo checks optimized against
+  reference response equality.
+
+Ran: python3 scripts/benchmark_s4b.py (exit 0). The script rewrites
+planning/s4b-call-benchmark.json. The rewritten file is byte-identical to the prior file,
+which I copied to .lake/review5/s4b-benchmark-before.json before running. Capacities 1/2/3/4
+give 3/2/1/1 optimized calls against 5 reference calls, with U = 3.
+
+Probe: .lake/review5/S4bProbe.lean (scratch only). On the S4bProofs fixture with B = 2, I used
+runCount with Batch.driver to count every primitive suspension on the whole path:
+- Batching.execute: 9 calls;
+- Runtime.execute: 12 calls;
+- the prepare stage: 5 calls (projects plus four owned parents' tasks).
+So 9 = 5 + 2 (wave) + 2 (child title calls) and 12 = 5 + 5 + 2. The whole-path saving of 3
+equals 5 − ceil(3/2). This agrees with the stage theorem, but nothing proves it (see M1).
+
+No implementation, roadmap or planning file was edited apart from this report. The benchmark
+rewrite left the file identical. No agents were started.
+
+VERDICT: S4b MAY CLOSE. THERE ARE NO BLOCKERS AND NO HIGH FINDINGS.
+- The transformed path has a whole structured-response equivalence theorem and inherits
+  authorization and conformance.
+- The selected stage has an exact, answer-independent primitive count of ceil(U/B), over actual
+  .batch suspensions with nonempty chunks of at most B inputs.
+- The acceptance examples are kernel-checked.
+Two medium findings concern the boundaries of what the count and the safety theorems cover.
+M1 is cheap and should be fixed before S5. M2 is an S6 obligation to record now.
+
+ACCEPTANCE STATUS
+Response equivalence: MET.
+   - optimized_reference (BatchPlan.lean:100-107) holds for any adapter with
+     Batch.Eligible. The proof is rows_wave_exact (BatchRows.lean:29-35) plus sequential_exact.
+   - reference_denotes (BatchPlan.lean:140-152) connects the staged reference to
+     denoteResolved of the original compiled IR.
+   - optimized_runtime (BatchExecution.lean:9-18) gives equality with Runtime.run on the
+     reconstructed checked operation, for any eligible adapter. Agreement is not needed.
+   - The dispatcher theorems execute_eq_runtime, execute_authorized and execute_conforms
+     (BatchExecution.lean:62-87) hold for every checked operation, including fallback, for
+     every adapter that agrees with the independent bindings. See L1 on the agreement premise.
+   - Responses are compared whole (Spec.Response): data, field order, error order and
+     multiplicity, paths, and null propagation.
+   - per_occurrence_errors (S4bProofs.lean:57-60) pins three separate unavailable errors at
+     filtered positions, two of them sharing one deduplicated "missing" key.
+Deduplication and scatter: MET.
+   - The same key, eligible.key.key context, defines keys/representatives, position and
+     uniqueCount (BatchWave.lean:44-55).
+   - representative_outcome (Batch.lean:90-94) uses the SufficientKey law that belongs to the
+     same single backend (Eligible.key : SufficientKey field (adapter field).single,
+     BatchWave.lean:35-39).
+   - Batch alignment is chunk_position plus load_exact (Batch.lean:131-166).
+   - Exactness of the capability's run is driver_exact, through capability.exact
+     (BatchWave.lean:15-27).
+   - Row coordinates go through rowPosition and Gathered.positions (BatchRows.lean).
+Scope: MET.
+   - A .batch call has one `context` by construction (Schema.lean Call.batch), so a batch that
+     mixes requests cannot be expressed.
+   - The wave takes one request, and no cache structure exists.
+   - The key is (tenant, projectId) (Bindings.lean:113), and its sufficiency is stated only for
+     equal contexts. equal_key_across_snapshots with cross_scope_reuse_rejected shows the key
+     alone would be unsound across snapshots.
+Count: MET for the transformed stage.
+   - Calls (Batch.lean:9-11) is exact and quantifies over every answer.
+   - load_calls, wave_calls and rows_wave_calls give chunks(U, B). calls_count and
+     chunks_ceiling turn that into runCount = (U + B − 1)/B for every resolver
+     (optimized_stage_count, BatchCost.lean:20-26).
+   - Singles and batches are both counted. The wave issues no singles.
+   - BoundedBatch Sat holds: every call is a .batch with 0 < n ≤ B (Batch.lean:168-189).
+   - Empty waves issue 0 calls (empty_wave).
+   - sequential_calls gives |positions| for the reference stage.
+   - strict_improvement holds at B = 2 (5 against 2) and is kernel-checked.
+   - The wave spans all filtered rows of all parents (rows prepared, BatchPlan.lean:50-53),
+     and U is computed over all of them (distinct_keys_across_parents = 3).
+Kernel examples: MET.
+   - Repeated keys across parents; two owned projects sharing the ID "shared", where the first
+     wins (first_owned_duplicate).
+   - Foreign target ("private") and missing target; a filtered foreign task ("hidden").
+   - Empty owned parents and an empty wave; chunk boundaries for 0 to 5 items at B = 2.
+   - Per-item failure, and nested filtered error paths.
+   - An excluded operation is unchanged, by rfl (excluded_operation).
+Wrong scatter and unsafe scope fixtures: MET as worded, but weak (L2).
+Benchmark: MET. It corroborates the stage count. It measures the same sub-machine the theorem
+   covers, not the whole dispatched path (M1).
+Effect order for excluded operations: MET. excluded_unchanged returns Runtime.execute itself.
+
+FINDINGS
+M1 (Medium) The reduced count is proved only for the isolated rowsWave stage. Nothing relates
+   it to the program the dispatcher actually runs.
+   - optimized_stage_count, the native --batch-benchmark (Demo.lean:6-14) and the JSON all
+     count Batch.rowsWave in isolation.
+   - No theorem says how many primitives Batching.optimized or Batching.execute issues, or
+     that the only Task.project primitives issued for the prepared rows are the wave's
+     ceil(U/B) batches.
+   - A regression that kept rowsWave but also issued per-row Task.project singles in `finish`,
+     or ran `sequential` and discarded its result, would leave every current theorem true:
+     response equality still holds, and the stage count is unaffected.
+   - The roadmap asks to "Instrument the actual Machine program emitted by the batch strategy"
+     and to bound the calls "issued for that transformed load".
+   Fix (small):
+   - Prove a runCount_bind lemma.
+   - Prove, for every resolver, a whole-path decomposition:
+     runCount(optimized) = runCount(prepare) + ceil(U/B) + runCount(finish …), and
+     runCount(reference) = runCount(prepare) + |positions| + runCount(finish …), with the same
+     prepare and finish terms. U and |positions| are computed from that resolver's prepared
+     value.
+   - Derive the whole-path saving |positions| − ceil(U/B).
+   - Make the benchmark also report the whole Batching.execute and Runtime.execute counts. My
+     probe gives 9 and 12 on the fixture.
+   Optionally, also prove that `finish` issues no Task.project call at the top level.
+M2 (Medium, S6 boundary) The optimized path has no fault-safety (Sat) theorem. Its "ready
+   input" facts are not used in any statement about the machine.
+   - The status lists prepared_rows_owned, prepared_input_pre, representative_pre and
+     task_batch_compatible as included (BatchCost.lean:30-56). They are stated only for
+     preparedFor (Generated.adapter Generated.application), the pure deterministic run, and
+     no theorem composes them.
+   - There is no
+     Sat Fault.contracts.Pre Fault.contracts.Post (Batching.execute …) AuthorizedResponse. So
+     the precondition of the .batch call (compatible plus every representative owned) is not
+     discharged for arbitrary permitted answers to prepare.
+   - The demo now runs Batching.execute. The S4 fault-safety theorem
+     Fault.execution_authorized covers only Runtime.execute.
+   - The status says correctly that faulting execution is not reordered and that the
+     sequential entry remains. The roadmap makes fault safety "separate", so this does not
+     block S4b.
+   Fix:
+   (a) Narrow the status. These are pure-run ingredient lemmas, not a proved precondition of
+       the optimized machine.
+   (b) Record an explicit S6 obligation. Before any handler drives Batching.execute, prove Sat
+       over Fault.contracts for the optimized machine:
+       - rows from permitted prepare answers are owned, because exact success keeps the domain
+         rows;
+       - representatives are members of those rows;
+       - compatibility holds;
+       - a per-position exact-or-framework batch answer reconstructs through the S4 local fault
+         evidence.
+       Also prove that a whole-batch transport failure is a distinct, declared outcome. It must
+       not be scattered as per-key failures.
+L1 (Low) Equality at the dispatcher level needs BindingAgreement, while the stage equivalence
+   does not.
+   - execute_eq_runtime connects the reconstructed `checked child nonempty` to the caller's
+     `selected` through EvalSpec (BatchExecution.lean:70-72), so it needs agreement.
+   - The roadmap states equivalence for any deterministic backend whose capability is exact
+     and keyed. optimized_runtime meets that only for the reconstructed checked operation.
+   Fix: prove that IR.Resolved (or IR.Checked) is unique for a given surface selection. Then
+   state execute_eq_runtime for every adapter whose taskProject capability is eligible, with
+   no agreement, and keep the agreeing version as a corollary.
+L2 (Low) The negative fixtures test values, not the implementation.
+   - BatchWrongScatter compares a constant function with twoRows.getValue on a standalone
+     Gathered (S4bProofs.lean:68-75). It does not change Batch.position or scatterResults in
+     the actual wave.
+   - BatchCrossScope refutes cross-request equality of the backend, not an obligation of the
+     batching API. As noted under Scope, mixing requests inside one batch is already
+     unrepresentable, which is the stronger guarantee.
+   - BatchZeroCapacity only shows ¬(0 < 0).
+   Fix: add a wrong-position wave variant, for example position replaced by a constant 0, and
+   show that wave_exact fails or that per_occurrence_errors changes on the fixture. The same
+   pattern was used for S3's unguardedAdapter and S4's swallowedExecution.
+L3 (Low) The demo prints a fixed claim.
+   - "5 single calls -> 2 batch calls (3 distinct keys, capacity 2)" (Demo.lean:19) is a
+     literal string. It is not computed in the default run, though the theorems and the
+     benchmark mode do back it.
+   Fix: compute and check the counts as the benchmark mode does, or drop the numbers.
+L4 (Low, wording) Recognition limits.
+   - recognizeShape matches literal field names with empty argument lists
+     (BatchExecution.lean:36-43). The reconstructed child comes from IR.lower and is checked
+     again. Nested loads inside the child are not optimized.
+   The status states all of this. Note also that Eligible is evidence for the reconstructed
+   operation, linked to `selected` only by `shape : surface = selection nested`. That is enough
+   given L1's uniqueness lemma.
+
+OBSERVATIONS
+- The capability's run is the pointwise loop (Bindings.lean:120-127). So the primitive count is
+  a model of requests, and no backend work is saved today. The status says this correctly.
+- The structure matches the original goal: the plan is checked, and the shared computation is
+  scattered back to every response occurrence through the unchanged compiled child graph and
+  output plan. The optimization is a specialized lowering to Machine, not a rewrite of Graph
+  syntax, and the status says so honestly.
+
+LATER-SLICE BOUNDARIES
+S5  Text and variable coercion with named arguments at the resolver boundary. Recognition must
+    keep working on lowered text operations; reuse recognizeShape after S5 lowering.
+S6  M2(b): Sat and fault safety for the optimized machine, and declared whole-batch transport
+    failure. A physical backend with one request per primitive and no retries, before the
+    count is read as backend requests.
+S8  General optimizer and multi-wave summation, recursive optimization of retained children,
+    and scaling.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s4b-claude-review.txt

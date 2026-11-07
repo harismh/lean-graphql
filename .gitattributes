@@ -1,0 +1,11 @@
+# Keep POSIX bootstrap scripts usable regardless of checkout newline settings.
+/scripts/* text eol=lf
+
+# Exclude disposable agent material from git archive even if added to Git.
+# Referenced milestone reviews and closure evidence remain in source archives.
+/planning/scratch export-ignore
+/planning/scratch/** export-ignore
+/planning/transcripts export-ignore
+/planning/transcripts/** export-ignore
+/planning/reviews/raw export-ignore
+/planning/reviews/raw/** export-ignore

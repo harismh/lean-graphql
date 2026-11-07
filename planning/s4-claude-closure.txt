@@ -1,0 +1,109 @@
+S4 CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s4-claude-review.txt (M1, M2, L1-L4), s4-review-resolution.txt,
+s4-status.adoc.
+
+Lean files changed since my S4 review (by timestamp):
+- GraphQL/Plan/Machine.lean, ListCompletion.lean, ItemsExample.lean.
+- Example/Tenant/S4Proofs.lean, Execution.lean.
+- Tests/SpecSwallowedFault.lean (renamed) and its check.py pin.
+I read each change.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s4-closure.out:
+- 396 audit reports: 329 with axioms (propext, Quot.sound, Classical.choice only) plus 67 that
+  use no axioms. No sorryAx.
+- All 23 expected compile failures pass, including SpecSwallowedFault.
+- The native graphql-tenant regression passes, as do the semantic and SDL tests.
+- The new theorems appear in the audit: sat_run_state, differing_duplicate_outcomes,
+  stateful_fault_authorized, mutated_renderer_rejected, legitimate_null_element and
+  complete_success.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S4 IS CLOSED.
+M1 and M2 are resolved, and L1-L4 are addressed. Nothing new was introduced that weakens a
+stated theorem.
+
+FINDING STATUS
+M1 RESOLVED.
+   - list_completion_contract's premise is now elementSpec P E elementsNullable, so
+     legitimately null elements in [T]-lists are covered. legitimate_null_element exercises
+     (ok none) in a [Nat]! list.
+   - ItemsExample.complete now routes success rows through the shared completeList false false,
+     then filterMap id.
+     - complete_success proves this is .ok (some rows) [], using collect_success and
+       list_completion_success.
+     - complete_contract uses it, so the Sat bound still comes from ResultAllowed and the
+       backend is never evaluated.
+   - The status now says the executed schemas use only non-null elements, and that the other
+     combinations are library results for expanded schemas. That is accurate.
+M2 RESOLVED.
+   - Machine.lean exports runStateMachine, which takes any state type σ and a transition
+     σ → (call) → answer × σ.
+   - It also exports sat_run_state, which needs validity of each call for every state and uses
+     no axioms.
+   - S4Proofs adds varyingResolver (it faults only call #2) and proves its contract by
+     call_contract.
+     - differing_duplicate_outcomes shows, by rfl, that only the second of two equal project
+       rows faults, at [projects, 1, title].
+     - stateful_fault_authorized derives AuthorizedResponse for that run from
+       Fault.execution_authorized.
+   - This matches my scratch probe and is now in the audited tree. Effectful (IO) certification
+     is correctly left to S6.
+L1 RESOLVED.
+   - The spec-only fixture is renamed SpecSwallowedFault, and its pin is updated.
+   - swallowedExecution changes the actual execution: it binds Runtime.execute and clears the
+     errors of the reconstructed response.
+   - mutated_renderer_rejected proves that its faulting output (titleFaults, which makes data
+     null) does not conform, through null_without_error_rejected.
+   - The mutation wraps reconstruction rather than editing render internals. That is enough
+     regression evidence that a lost error is caught on the real executed output.
+L2 ADDRESSED. The status calls ItemsExample standalone example code, deliberately outside the
+   umbrella API.
+L3 ADDRESSED. The status says graphql-tenant runs fixed operation and snapshot fixtures and is
+   not a request-serving endpoint.
+L4 ADDRESSED. deterministic_execution_contract has a comment saying the manual adapter only
+   witnesses consistency with EvalSpec, and that the Sat statement does not depend on the
+   driver.
+
+WHAT S4 ESTABLISHES (unchanged from s4-claude-review.txt, now with the fixes)
+- One entry, Runtime.execute. It interprets the actual compiled P1 graph through the pure,
+  fuel-free Machine, with every node form implemented and covered by both
+  interpreter_denotation and graph_contract_execution.
+- Deterministic route, for every request, checked P1 operation and agreeing adapter:
+  - the response equals EvalSpec, so it is authorized and conforms;
+  - it is error-free under SuccessConditions;
+  - filtering the snapshot to the caller's tenant leaves it unchanged (modeled response
+    values only).
+- Fault route: for every pure or stateful driver whose answers are exact success or declared
+  framework failure, the response is AuthorizedResponse and Conforms.
+  - The proof uses local per-constructor evidence, explicit occurrence positions and derived
+    ownership, with no EvalSpec equality.
+  - Equal rows may receive different answers.
+- A tenant-free items(first:) length bound, obtained from the contract through the same Sat
+  theorem and preserved through completion at the selected path.
+
+LATER-SLICE BOUNDARIES (not S4)
+S2b  Argument names and layouts, projection agreement and a same-typed argument swap fixture
+     (G1-G5 from the S2a closure) before any generation. Generated certificates must
+     instantiate the existing S3/S4 theorems without re-proving them.
+S4b  Replace pointwise vectorLoad with certified .batch calls:
+     - Add a Sat case for .batch using `compatible` and BatchCapability.exact.
+     - Prove response equivalence and authorization preservation of the transformation.
+     - Prove the backend-call bound (ceil(U/B)), counting every primitive call.
+     No cost claim exists today.
+S5   Text and variable coercion into P1 typed operations. Every admitted operation must reach
+     Runtime.execute, or a specified rejection. The argument-error branch is ready for that and
+     needs no change to compiled_fault_contract. Parser faithfulness is still a boundary.
+S6   Certified effectful handlers:
+     - lift sat_run_state to an effectful or monadic driver;
+     - supply refinement evidence between the external store and the modeled snapshot before a
+       backend may claim Fault.Post's exact-success branch. An annotation alone is not
+       evidence.
+     IO, network, scheduling, timing, call traces and shared caches remain unproved.
+     run_tenant_view stays deterministic and covers response values only.
+Other P0 text HTTP stays legacy and outside the proofs. The four list/nullability
+     combinations need instantiating on an executed schema when expanded schemas arrive (S8 or
+     earlier).
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s4-claude-closure.txt

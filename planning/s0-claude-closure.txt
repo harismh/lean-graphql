@@ -1,0 +1,83 @@
+S0 CLOSURE REVIEW: Example/Tenant specification and witness gate
+Reviewer: Claude (Opus 5.5). Date: 2026-11-04.
+Read: proof-first-roadmap.adoc (S0 section and theorem chain), s0-status.adoc, s0-claude-review.txt,
+all nine Example/Tenant/*.lean modules, scripts/check.py, Tests/Axioms.lean, lakefile.toml, and the
+README status lines.
+Ran:
+- python3 scripts/check.py: rc 0. It reported 79 audits, 74 tenant theorems (matching a grep
+  count), and six compile rejections. No tenant theorem uses Classical.choice.
+- Two probes in .lake/review4/, S0.lean and S0a.lean (results below). No stray lean processes.
+
+VERDICT: S0 CLOSED, WITH TWO SMALL FIXTURE ADDITIONS RECOMMENDED. NO SPECIFICATION FLAW FOUND.
+The gate the roadmap sets for S0 (L197-220) is met, and the specification holds up under adversarial
+reading. The independent definitions do not reference the executor, the generator or each other in
+the wrong direction. Erasure takes no snapshot or principal. Conformance takes neither and does not
+reference the evaluator. The universal executor theorems, IR agreement, and the generic-to-AuthTree
+bridge remain S1/S4 work, as the status document says.
+
+WHAT I CHECKED, AND WHY I CONSIDER IT SOUND
+- Occurrence binding (N1 resolved). The root and Task.project rules require
+  projectOccurrence ... = some r (Authorization.lean:54, :64). A tree therefore cannot use a
+  shadowed duplicate. My probe S0a.lean proves this: with two owned records sharing an ID, a tree
+  using the second record's title is rejected. FirstOwned shows the function's choice is the first
+  owned row (Occurrences.lean:40-64).
+- Lists are exact. AuthItems must consume precisely projectOccurrences or taskOccurrences, in order
+  and indexed from 0 (Authorization.lean:57-62, :75-81). Trees cannot omit, add or reorder owned
+  items, and filtered indices are structural. title_tree_exact (S0Proofs.lean:122) uses this
+  correctly.
+- Ownership. Every AuthTree carries OwnedContext at each object (authTree_owned), and each leaf
+  repeats the owner check. Task.project requires an owned target found by lookup, not the task's
+  ownership. fake_label_is_insufficient (Checks.lean:53) now tests a real foreign occurrence, so F1
+  is genuinely fixed. F2 is fixed at the leaf level (Checks.lean:60-67) and at the tree level
+  (S0Proofs.lean:134-142).
+- Failures. Unavailable is admitted only for an owned task whose lookup returns none, at the exact
+  path. Framework failures need an owned context and a declared shape, and use that shape's
+  nullability (Authorization.lean:71-73). This gives D3 without a free-form failure rule. Spurious
+  framework failures still satisfy AuthTree by design; equality with EvalSpec excludes them, and
+  that is an S4 obligation.
+- EvalSpec. It is total, fuel-free and structural on PSelection. Its bubbling uses an independent
+  boundary/pair/collect algebra (Response.lean:70-83) rather than GraphQL/Response.lean. Siblings
+  keep evaluating after a bubble, so all errors are collected.
+- Agreement of the two specifications. For every rule pair, erase reproduces EvalSpec's
+  combinators: field to pair-cons, list items to boundary(element) then collect, list to boundary,
+  failure to fail. I expect EvalSpec results on valid selections to be authorized (see R1). I
+  checked this by reading, not by a universal proof.
+- Roadmap witnesses: the nullable and required bubbling cases with exact paths; filtered index 0
+  for a child whose raw position is 1; a single error; sibling preservation; equal missing and
+  foreign outcomes; a foreign task referring to an owned project being omitted; rejection of a
+  spurious Unavailable on a snapshot outside SuccessConditions; and adversarial-snapshot witnesses
+  needing only ValidOperation. All are present and kernel checked.
+- SuccessConditions are not vacuous. My probe S0.lean exhibits a consistent snapshot satisfying
+  all five fields for requiredQuery, and EvalSpec has no errors there.
+
+RECOMMENDED ADDITIONS (low; can be done during S1)
+A1. Add the two probe results as repository fixtures, since they cover claims the status document
+    makes:
+    - the shadowed duplicate is rejected at tree level (adapt the root_obj helper from
+      .lake/review4/S0a.lean); duplicate_owned_success only covers EvalSpec;
+    - SuccessConditions is inhabited and gives an error-free EvalSpec (.lake/review4/S0.lean). Without
+      this, the later universal success theorem could be vacuous without anyone noticing.
+A2. The value-level ProjectLeaf and OwnedProject (Model.lean:100-164) duplicate AuthField's role.
+    real_foreign_member_rejected and wrong_parent_rejected test the older relation. Either mark it
+    auxiliary in a docstring, or point those two checks at AuthField, so readers know which relation
+    AuthorizedResponse uses.
+
+NOTES FOR S1/S4 (not S0 gaps)
+R1. Prove a universal specification consistency theorem: ValidOperation sel ->
+    AuthorizedResponse s p sel (EvalSpec (tenantMeanings s p) sel). It needs no executor. If it
+    failed, S4 would have two irreconcilable targets, so proving it before S4 is cheap insurance.
+R2. Spec.Error fixes PublicError ApplicationError (Response.lean:46-48). The bounded-list example
+    needs the application error type parameterized, as roadmap N2 requires.
+R3. SuccessConditions.requiredTargets covers every owned task in the snapshot, not only traversed
+    ones, and uniqueness is not needed for error-free results. That is acceptable for sufficient
+    conditions; state it if a sharper version is wanted later.
+R4. FirstOwned has only the soundness direction. A none/completeness lemma for lookupOccurrence
+    would make it a full characterization. AuthTree uses the function directly, so FirstOwned is
+    not on the trust path.
+R5. check.py:24 discovers only lines beginning with "theorem". A private or attribute-prefixed
+    theorem would go unaudited. Unknown names fail loudly, so the gap is only silent omission.
+
+No implementation file or earlier report was edited, and no agents were spawned. The probe files
+are .lake/review4/S0.lean and .lake/review4/S0a.lean.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s0-claude-closure.txt

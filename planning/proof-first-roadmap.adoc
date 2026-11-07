@@ -1,0 +1,1104 @@
+= Provable GraphQL Programs
+:revdate: 2026-11-05
+:toc:
+:toclevels: 2
+:sectnums:
+
+This roadmap makes application proofs the acceptance criterion for the next prototype.
+The first deliverable is a GraphQL application whose response authorization follows
+from proved resolver implementations and a compositional theorem about the executor.
+Schema certificates, generated signatures, and passing protocol tests remain useful,
+but they do not establish that application guarantee.
+
+This replaces the milestone order in link:development-plan.txt[the earlier development
+plan]. The existing prototype is an implementation baseline. Every theorem and new
+API below is a proposed deliverable unless the implementation status explicitly records
+completion. S0 is complete; see link:s0-status.adoc[its scope and evidence].
+Claude reviewed the revised S1 architecture and cleared S1a-S1d to begin; see
+link:s1-grafast-claude-closure.txt[the S1 architecture review] and
+link:s1-grafast-review-resolution.txt[the revision record]. S1a-S1d are now implemented
+and closed by the separate link:s1-claude-closure.txt[implementation closure review].
+See link:s1-status.adoc[S1 scope and evidence]. The architecture review's final
+S2a/S4b wording corrections are incorporated below.
+
+Claude also reviewed the original roadmap through `hc`; its
+link:proof-first-roadmap-claude-final.txt[original planning verdict] cleared S0 with no
+remaining blockers. The link:proof-first-roadmap-review-resolution.txt[resolution record]
+tracks the revisions. This is approval of the plan, not evidence that the proposed
+representations or proofs have been implemented or shown feasible.
+
+== The outcome we must demonstrate
+
+Build a small application with tenants, projects, and tasks. It operates first over
+an arbitrary finite, immutable snapshot and a principal. Projects and tasks each
+store their own tenant. Projects store ordered task IDs; tasks separately store a
+project ID. Relationships may be inconsistent, missing, or cross-tenant; IDs may be
+duplicated. The safety theorem must handle these cases without a global isolation
+assumption.
+
+[source,graphql]
+----
+type Query {
+  project(id: ID!): Project
+  projects: [Project!]!
+}
+type Project {
+  id: ID!
+  title: String!
+  tasks: [Task!]!
+}
+type Task {
+  id: ID!
+  title: String!
+  project: Project!
+}
+----
+
+Specify the pure domain behavior now:
+
+* Lookup filters by the principal's tenant before selecting the first matching ID.
+  Membership identifies the exact snapshot record occurrence, not just an ID or a
+  record whose tenant field happens to match.
+* Root `project` returns the selected owned record; missing and foreign records both
+  produce `none`. `projects` lists owned records in snapshot order.
+* `Project.tasks` follows that project's stored task IDs, uses owned lookup, and
+  omits missing or foreign tasks. Response indices refer to this filtered list.
+* `Task.project` uses the task's independently stored project ID. A missing or foreign
+  target produces the same closed public error, `Unavailable`, because this field is
+  non-null. Ownership of the task does not establish ownership of that target.
+* Scalar fields return the specified projection of the exact parent record. The
+  public error algebra uses fixed codes and approved request-derived paths; it has
+  no arbitrary backend-message `String` payload.
+
+S0 defines a small first-order `PSelection`: field names, literal arguments, and child
+selections, without execution-IR features. Define a hand-written inductive
+`AuthTree principal snapshot selection tree` over that type, independently of the
+resolver implementation and generic contract machinery. Domain-object nodes require
+exact snapshot membership and tenant equality; the public query root, containers, and
+response envelope have separate structural rules and are not database records.
+Root and relationship field rules follow the domain relations above. Each scalar leaf
+identifies its field, parent occurrence, and permitted projection. List, null, and
+failure rules complete the tree. Ghost evidence is constructed from proved
+postconditions; a resolver-supplied provenance label is not evidence.
+
+[source,text]
+----
+AuthorizedResponse p snap op response :=
+  exists tree, AuthTree p snap op tree AND erase tree = response
+----
+
+The theorem certifies a valid authorization derivation for the returned values. It
+is not a causal audit of every read or branch in the implementation. Implicit flows,
+such as choosing a public constant after inspecting foreign data, are outside this
+property. Full confidentiality of timing, logs, and all existence observations is
+also excluded. The stronger view theorem discussed below addresses modeled output
+independence separately.
+
+=== Expected failures and successful behavior
+
+Fix concrete expected results in S0. An owned project can include an owned task whose
+separate project reference targets a foreign record. Selecting that task's non-null
+`project` produces `Unavailable`; with `Task!` inside `[Task!]!`, it bubbles through
+`Project.tasks`. Under root `project(id:)`, that nullable project becomes null; under
+root `projects: [Project!]!`, it reaches `data: null`. Keep the original selected error
+path and use the filtered list index. A foreign task pointing at an owned project must
+still be omitted from `Project.tasks`.
+
+Safety holds for arbitrary snapshots, including duplicate IDs. Functional results and
+error-free execution have separate, explicit conditions: unique IDs, existing owned
+roots requested by lookup, valid owned targets for required traversed relationships,
+successful argument interpretation and no injected faults. The planned pure graph
+interpreter terminates structurally and has no execution-fuel premise.
+
+The success obligation is universal over every operation in the declared profile
+under those conditions: it conforms to the selection, equals the independent domain
+and execution specification, and has no errors. One working demo query is insufficient.
+A program that always fails, or handles only a hard-coded query, must fail this gate.
+
+== The proof boundary
+
+The unconditional result is about the concrete pure snapshot program, for every
+principal and finite snapshot. The following boundaries must be named explicitly.
+
+[cols="1,2,2",options="header"]
+|===
+|Boundary |Evidence or assumption |Claim allowed
+|Schema and operation ASTs
+|Independent validity and meaning relations; checker certificates
+|Accepted ASTs denote the certified schema or operation in the declared profile
+|Generated bindings
+|Correspondence to an independently supplied field-indexed implementation family
+|An adapter invokes the designated implementation with the correct conversions
+|Pure resolvers and executor
+|Concrete contract proofs and compositional preservation
+|The modeled application satisfies its stated response properties
+|GraphQL text, JSON envelope, and variable decoding
+|Initially bounded and tested; every produced value goes through proved validation
+|Universal safety for accepted values; exact source-text/JSON fidelity remains separate
+|Ordered encoding and UTF-8
+|An independent encoding relation and proofs about shipped functions
+|The structured result is preserved in the returned bytes
+|Authentication
+|External `AuthSound`: the returned principal corresponds to the caller
+|The kernel theorem holds for whichever principal is supplied; identity binding is external
+|Snapshot acquisition
+|`SingleSnapshot`: bind one immutable value before execution; external authenticity if it represents a live database
+|The response is justified relative to that captured value, not an unmodeled changing database
+|Backend
+|`BackendRefines`: a supplied certified outcome producer with the required postconditions
+|A backend participates only when it can provide that evidence; no global axiom supplies it
+|Lean native compiler, runtime, LeanIO, and network
+|Explicit trusted execution boundary, including reviewed implementation substitutions
+|Returned certified values have their modeled meaning assuming faithful execution and delivery
+|===
+
+Neither parsing nor request decoding can construct a certified plan directly. Their
+errors can change request meaning, so source fidelity is not claimed yet. Safety can
+still hold for every accepted decoded operation and variable value.
+
+The tenant comes from authenticated context, never an arbitrary GraphQL argument.
+An external adapter unable to produce the required outcome evidence remains outside
+the certified API. Proof-carrying types do not establish database authenticity or
+transaction isolation by themselves. Cancellation and nontermination can prevent a
+result; they are not an availability theorem.
+
+== Delivery order and feature profiles
+
+[cols="1,2,2,1",options="header"]
+|===
+|Slice |Build |Proof deliverable |Depends on
+|S0 |Domain semantics and success criteria |Independent response relations and counterexamples |—
+|S1 |Indexed calls, selection IR, typed execution DAG, and output plan |Specification consistency, typed dependencies, and independent planning denotation |S0
+|S2a |Minimal explicit schema and manual adapter shape |Independent field-identity agreement |S1
+|S3 |Generic contracts and concrete resolvers |Actual implementations satisfy their contracts |S2a
+|S4 |The narrow shipped executor |Generic preservation, independent application-property bridges, exact execution semantics, and a second contract instance |S1–S3
+|S2b |Generate the exercised binding shape |Per-artifact schema and adapter certificates |S4
+|S4b |One scoped batch-load transformation |Response equivalence, authorization preservation, and a backend-call bound |S2b
+|S5 |Operation preparation and coercion |Soundness, meaning preservation, and bounded profile completeness |S4b
+|S6 |Certified driver, encoding, and narrow handler |The returned handler result carries the composed guarantee |S5
+|S7 |Additional language features |Lowering preservation into the same core IR, through the wire |S6
+|S8 |Generality, scaling, and richer applications |An end-to-end second property and verified optimizations |S7
+|===
+
+S2a tests the interface before automating it; S2b is intentionally after S4. The first
+milestone closes only after S2b: a real application theorem with generated bindings.
+S4b then proves one batching improvement before input/transport expansion.
+The second closes at S6: dynamically submitted requests use that same proved path.
+Broader features follow that narrow end-to-end result.
+
+[cols="1,3,3",options="header"]
+|===
+|Profile |Included |Excluded
+|P1, S0–S4, S2b, and S4b
+|Queries over concrete recursive objects, ID/String values, all list/nullability forms, closed failures; statically typed literal arguments; Int arguments for the small list-bound example
+|Text operation validation, variables, aliases, repeated fields, directives, fragments, enums, abstract types, recursive input objects, all introspection including `__typename`
+|P2, S5–S6
+|P1 plus decoded query ASTs, variables/defaults, and proved argument coercion within explicit limits
+|The P1 feature exclusions other than variables and dynamic preparation
+|P3, S7 sub-slices
+|Explicitly add aliases/merging, directives, inline fragments, interfaces/unions, enums, recursive input objects, then public `__typename`, each with lowering evidence
+|Named fragments, full introspection, mutations, subscriptions, and other unproved features
+|===
+
+Arguments are present from P1, so `project(id:)` is meaningful before variables arrive.
+P1 field keys equal field names and template guards are true. Distinguish a
+variable-parametric selection template from its instantiated, guard-free selection IR.
+Planning lowers that IR to a typed execution DAG and an output plan. The two selection
+representations support response keys and per-concrete-type field groups; only the
+template retains guards and occurrences. Each verified profile rejects features
+outside its table; there is no fallback to the legacy executor.
+
+== S0 Define the property before the machinery
+
+*Build.* Define the finite snapshot, principal, deterministic owned lookup, field
+projection relations, closed errors, and `PSelection`. State the independent
+`AuthTree`, `Conforms`, and total `EvalSpec` over `PSelection`, before introducing
+the IR. Define `ValidPSelection` independently, including field existence, literal
+argument types, and legal child selections. `EvalSpec` is total on these valid selections
+for arbitrary snapshots, specifying successes, missing targets, and exact null/error
+propagation. It takes independent domain field meanings, not resolver implementations.
+Keep it free of execution fuel and injected faults. The new structural interpreter
+will prove exact agreement for the concrete pure backend; external resource limits
+and faults belong to the separate safety theorem. Failures in `EvalSpec` are not unconstrained alternatives.
+
+`AuthTree` permits fixed framework exhaustion/internal failures at any selected field
+and argument failures at their field, with prescribed paths and completion. This
+supports safety under faults without weakening the independent exactness theorem.
+Write every hypothesis explicitly; "admitted" or "well formed" must not hide a policy premise.
+
+*How to prove it.* Build an authorized result witness. Prove rejection of a forged
+record with a copied tenant ID, a wrong field/parent projection with distinct fixture
+values, and fake provenance labels. Define `erase` separately from authorization rules.
+Prove missing and foreign targets give the specified identical outcomes. Record that
+implicit flows are allowed by authorization alone.
+Use recursion on finite selections and lists to define total evaluation; a recursive
+schema does not imply an infinite operation. Keep its equations independent of the
+executor and the generic contract judgment.
+
+*Acceptance.* Exhibit cross-tenant edges and duplicate IDs satisfying every hypothesis
+of the safety theorem. The functional-success hypotheses are separate and enumerated.
+A task's tenant is its own stored field. Public errors, filtered indices, and the
+exact null-bubbling examples above are part of the specification. No safety premise
+assumes the desired isolation property. Adding an unexplained `Unavailable` failure
+must violate `EvalSpec`, even on a snapshot outside the error-free success conditions.
+
+== S1 Define typed plans with an independent meaning
+
+*Build.* Retain finite schema-local identifiers and field-indexed calls. A call carries
+its parent model, arguments, and canonical field identity; its answer type depends on
+that field. Reserve both call forms now:
+
+[source,text]
+----
+Call.one field parent args
+Answer (one ...) = Outcome (FieldResult field)
+Call.batch field scope (inputs : Vector (Parent field × Args field) n)
+Answer (batch ...) = Vector (Outcome (FieldResult field)) n
+----
+
+The batch precondition supplies the single-call precondition for each input plus
+scope compatibility. Its fixed postcondition supplies the corresponding single-call
+postcondition at every position. Postconditions alone do not imply equality with
+single-call outcomes; exact batch refinement is an additional S4b law. The batch
+constructor can remain unused until then, without changing S3/S4 quantification.
+Object carriers are models or typed references, not recursively unfolded
+host types. `Outcome` parameterizes a closed application error type alongside fixed
+framework errors. Successful non-null output can still fail. Preserve omission,
+explicit null, and supplied input as distinct values.
+
+Adopt the separation of execution and output planning described by
+https://grafast.org/grafast/operation-plan/[Grafast], as architectural inspiration.
+This project proves its own Lean definitions; it does not verify Grafast's TypeScript
+implementation or adopt its performance claims as premises.
+
+S1a-S1d implementation is complete and reviewed as of 2026-11-05.
+See `s1-status.adoc`, `s1-review-resolution.txt`, and `s1-claude-closure.txt` for
+proof coverage, validation, review resolution and explicit later-slice limits.
+
+=== S1a Establish the independent target
+
+First discharge the S0 review's consistency obligation for every finite snapshot,
+principal, and valid P1 selection:
+
+[source,text]
+----
+ValidOperation selection
+  -> AuthorizedResponse snapshot principal selection
+       (EvalSpec (tenantMeanings snapshot principal) selection)
+----
+
+Also prove conformance of that reference result. Keep EvalSpec, AuthTree, and Conforms
+independent; none may be redefined through the new plan representation. Add the
+occurrence lookup converse/none lemmas needed by lowering. Preserve S0's explicit
+string-only ID literal restriction. Parameterize reusable response/completion code by
+application error before introducing the second contract instance; the tenant model
+remains a concrete instantiation. Extend or enforce theorem-audit discovery syntax
+before introducing declarations the current scanner cannot discover.
+
+=== S1b Separate four representations
+
+[cols="1,3",options="header"]
+|===
+|Representation |Responsibilities
+|Selection template
+|Field identities, argument expressions, guarded occurrences, inherited child guards, and source ordering; variable-parametric
+|Resolved selection IR
+|Unique response keys, fixed order, per-concrete-type selections, checked arguments or a specified argument error; no runtime guards
+|Execution plan
+|Typed dependencies and structured dataflow for reads and pure computations; no response-key merging
+|Output plan
+|Typed references to execution results, response occurrence identity, list reconstruction, field order, nullability boundaries, and error paths
+|===
+
+P1 template guards are true. Later instantiation preserves each occurrence's child
+guards, enables a field when any contributing occurrence is enabled, and orders fields
+by the first enabled occurrence. Collection, guard evaluation, and merging remain
+outside execution. Unsupported features remain rejected until their later profile gate.
+
+An operation plan pairs an execution graph with an output plan indexed by that same
+graph. Sharing a computation must not merge its response occurrences: each occurrence
+retains its own completion boundary and error path. Fetch identity and output identity
+are different types, not interchangeable integer indices.
+
+=== S1c Make the graph structurally safe
+
+Use a finite, topologically ordered dependent sequence of nodes. A dependency can
+reference only an earlier node with the required output type. This makes missing
+references, type mismatches, and cycles unrepresentable. Graph acyclicity establishes
+structural traversal termination; it does not establish termination of external IO.
+
+Do not expand lists into a plan node per future record. Provide a restricted structured
+`each`/region form: a finite body graph executes over runtime items. Nested regions
+have explicit captured dependencies and typed row correspondence. The static region
+graph is acyclic even though schemas are recursive and runtime batch sizes vary.
+P1 lowering initially emits pure projection, single-field calls, and structured list
+traversal. S1 also defines typed gather, pointwise vector map, scatter, and vector-load
+forms, so S4b's transformed plan is already representable. Gather spans all parent
+rows of one region/wave instance and records each item's parent and position; scatter
+uses that provenance to reconstruct the nested rows. Prove their structural denotation
+laws in S1d even though P1 lowering does not yet emit the batched arrangement.
+
+Vector-load denotes pointwise single lookup. S4's sequential interpreter implements it
+with single calls; S4b supplies a certified batch capability and implementation strategy
+using the reserved Call.batch constructor. Deduplication/chunking algorithms,
+eligibility, backend refinement, and the transformation belong to S4b. No syntax,
+Call/Answer family, or independent semantics is added by the rewrite slice.
+
+Represent batch values with their cardinality, for example `Vector (Outcome A) n`.
+An `n`-indexed result rules out length mistakes, but correct key-to-result matching
+requires a separate theorem. Flatten/filter/scatter maps must preserve parent
+occurrences, duplicates, original order, and output positions after filtering.
+Unary request data and per-item data have distinct types or explicit proven broadcasts.
+
+Plans are descriptions parameterized by request context; they do not capture a
+principal's records or results for later requests. Cache reuse is not implemented in
+S1. Future reuse must check schema/policy/plan-specialization constraints and bind
+fresh request data. No same-key or same-step-class shortcut establishes equivalence.
+
+The existing `Machine` has arbitrary continuation functions. It is a suitable target
+for a sequential interpreter, not an inspectable representation from which to recover
+this graph. In S1-S4b, verified lowering alone constructs application plans from
+selections and field bindings. Author-written plan resolvers are a named future
+extension, requiring a proof that each supplied field plan denotes its independently
+specified field meaning. Do not promise automatic extraction of optimizable plans
+from arbitrary Lean functions or IO.
+
+Choose structural termination for the pure interpreter: finite node sequences,
+well-founded nesting of finite region bodies, finite runtime input vectors, and total
+pure projection functions. There is no unrestricted recursive region call and no fuel
+parameter. External limits may still produce certified framework exhaustion failures;
+this is a runtime policy, not a precondition of pure denotational equality.
+
+=== S1d Give planning an explicit semantic contract
+
+Define plan denotation against supplied domain field meanings and output reconstruction.
+Prove P1 lowering from the independent surface syntax into the resolved selection IR,
+and from that IR into the paired operation plan, preserves meaning. These are semantic
+functions over the plan language, not yet a proof about the shipped executor.
+
+*How to prove it.* Use induction on selections and structured regions, and the order
+of the dependent node sequence. Prove schema lookup and boundary conversion soundness,
+then prove each planning constructor preserves denotation. Output references must be
+transported with a checked remapping when a later rewrite changes the graph. Prefer
+order-preserving typed context embeddings for structural extensions; use a typed
+substitution/result-correspondence proof when sharing or replacement is not an embedding. Prove
+flatten/reconstruct laws, including empty lists, duplicate keys, omitted targets,
+per-item errors, and nested parent positions. Prove composition of one-level gathers
+and scatters: the S4b task wave spans project rows and then their task rows, and must
+retain both positions. Typing alone is not an order or policy proof.
+
+[source,text]
+----
+lowerP1 selection = ok selected
+  -> ValidPSelection selection AND
+       SelectionDenotes meanings selected = EvalSpec meanings selection
+
+plan selected = operationPlan
+  -> OutputDenotes operationPlan.output
+       (ExecutionDenotes meanings operationPlan.graph)
+       = SelectionDenotes meanings selected
+----
+
+*Acceptance.* Deliver a narrow P1 plan and output representation, total denotational
+semantics, the two lowering proofs, and the universal S0 consistency theorem. Negative
+fixtures reject wrong-schema IDs, wrong parent/result types, forward/cyclic references,
+wrong batch lengths, and output references from another graph. Semantic counterexamples
+reject reordered scatter, wrong-parent reconstruction, and conflation of an omitted
+input with null. A finite nested project/task plan must preserve S0's successful and
+bubbling results. There is still no optimizer or asynchronous scheduling claim at S1.
+
+Gate implementation in order: S1a consistency; S1b-c representations and negative
+fixtures; S1d structural laws and lowering proofs. S2a binding experiments may begin
+once the S1b-c call and graph interfaces pass, but S3/S4 cannot close before S1d.
+This overlaps interface experiments without treating a partial S1 as complete.
+
+== S2a Exercise the binding shape before generating it
+
+S2a is implemented and reviewed as of 2026-11-05. See
+link:s2a-status.adoc[scope and measurements] and
+link:s2a-claude-closure.txt[implementation closure and subsequent proof gates].
+S2b follows completed S3/S4. Its argument-layout, projection and benchmark entry gates are implemented; see link:s2b-status.adoc[S2b status].
+
+*Build.* Expose the parsed demo schema as a readable `demoAst`. Define a supported-profile
+`WellFormedSchema` and `Represents demoAst indexedSchema`. Construct the smallest typed
+bindings and adapter equations explicitly, using the shape the generator will later emit.
+These are a golden artifact and the application's actual bindings, not a second executor.
+The independently anchored BindingsByField interface includes an optional batch
+implementation/capability per field, with indexed inputs and pointwise postconditions.
+A deduplicating capability also supplies a field-specific key function and its
+sufficiency law for the actual deterministic backend: equal keys under the same scope
+imply equal single-call outcomes. S2b preserves the key, law, backend binding, and
+canonical field identity together. A plain batch capability without a sufficient key
+can batch, but cannot enable deduplication. Scope is a runtime request-context token,
+not principal records or cached results embedded in a reusable plan.
+Generated S2b artifacts preserve this slot and its identity. Absence uses the sequential
+fallback; only a separately proved exact-refinement capability enables S4b batching.
+A fallback that loops over single backend calls does not satisfy the reduced-call bound.
+
+*How to prove it.* Anchor implementations to canonical field identities obtained from
+the checked AST. An independent `BindingsByField` family and field contracts identify,
+for example, `Project.title` by that coordinate, not by a generator-provided alias.
+Prove that interpreting the adapter for that field invokes that designated implementation
+on the correctly translated arguments and outcome. Establish input/output conversion
+laws for both successful values and public failures.
+
+*Acceptance.* Swapping two same-typed fields cannot be justified by also swapping a
+mapping generated alongside them. The agreement target is supplied independently of
+adapter generation. The concrete application proofs refer to the canonical identities.
+Try the schema evidence strategy on small, mixed, and existing scalar-only workloads
+now; record kernel checking time and memory before committing to a large generator.
+
+=== S3 entry gate from the S2a review
+
+Implemented in `PlanTransport.lean` and `ExecutionBridge.lean`; see
+link:s3-status.adoc[S3 evidence]. The following records the required gate.
+
+S2a's field-level bridge now uses snapshot-independent record carriers and a Request
+scope, while the S1 tenant compiler still uses occurrence carriers and Principal.
+Before fixing S3 contracts, take the parametric-compiler route from the S2a review:
+parameterize compile, Output, render and branch row extraction by carriers and scope,
+keep compile_correct universal, and lift field-level conversion to whole-plan
+transport. The entry theorem must quantify over every request and valid P1 operation
+and equate the actual binding plan's response with the independent EvalSpec. A
+field-level bridge alone does not discharge this gate.
+
+Before S2b generation, add checked argument names/layouts and AST-coordinate
+projection certificates, including a same-typed two-argument swap rejection. Keep
+the independently supplied resolve functions and semantic agreement target outside
+generator output. Repeat and broaden evidence measurements (object references,
+multiple arguments, per-object certificates) before choosing a generator strategy.
+S6 needs a separate effectful certified batch interface; do not weaken deterministic
+BatchCapability.exact into a mere postcondition.
+
+== S3 Prove useful resolver behavior
+
+Complete and reviewed on 2026-11-05: link:s3-status.adoc[contracts and bridge evidence]
+and link:s3-claude-closure.txt[Claude closure]. Every compiled P1 graph has a
+contract certificate, and deterministic certified frames have a proved render bridge.
+
+*Build.* Define a generic result specification with object invariants, call preconditions,
+outcome postconditions, and leaf, list, error, and completion rules. Contracts cover
+plan nodes and region rows, including pure projections, captures, gather/scatter, and
+single/batch calls. Each row value carries the invariant consumed by the output plan;
+resolver contracts alone are insufficient once computations form a DAG. Whole-list properties
+must be expressible; an elementwise ownership predicate alone cannot express a length
+bound. The response conclusion is a parameterized judgment. Instantiate it with tenant
+rules, then prove that judgment implies S0's independent `AuthorizedResponse`; do not
+redefine `AuthTree` through the framework. The list-bound example follows the same
+pattern. S3 defines the obligations for this bridge; S4 discharges them through the
+executor. Users supply the required closure laws; arbitrary postconditions do not
+automatically survive projection or completion. Merging preservation belongs to
+template instantiation, outside the core judgment.
+
+Contracts are optional at the application level. A verified program must cover every
+reachable field, including scalar fields and failures. An uncontracted field cannot
+silently inherit the program's guarantee.
+
+*How to prove it.* Prove the concrete lookup, listing, child traversal, scalar projection,
+and public-failure functions satisfy their independent domain relations. Use lookup and
+filtering lemmas and case analysis on every outcome. Lift these through S2a's adapter
+agreement interface and package `tenantResolvers_satisfy_contracts`. State S3/S4
+theorems for any adapter satisfying that interface, then instantiate them with the
+manual equations; generated certificates will later use exactly the same interface.
+
+A GraphQL-valid request does not establish a business precondition. Resolvers must
+handle every type-correct input with a specified value or denial. A stronger precondition
+requires a proved guard that either supplies its evidence or returns an allowed public
+failure before issuing the call. Never assume user-supplied IDs are already owned.
+
+*Acceptance.* The application uses a proved bundle, not an axiom that safe resolvers
+exist. Removing an ownership check, projecting the wrong field, or exposing private
+failure text breaks the relevant obligation. The spec interface also admits the independent
+list-bound instance required in S4, without tenant-specific rules in the framework.
+
+== S4 Compose contracts through the shipped executor
+
+Complete and reviewed on 2026-11-05: link:s4-status.adoc[S4 execution and proof evidence]
+and link:s4-claude-closure.txt[Claude closure]. Validation passed 396 proof audits and
+23 compile-rejection tests, including the native typed entry. S4 establishes both
+deterministic and fault-safe execution plus modeled tenant-view response equality.
+The closure records the S2b argument-layout gate, S4b batch/cost obligations, S5 text
+entry, S6 external-store refinement and effectful-driver boundaries, and expanded
+schema nullability instantiations.
+
+=== Entry conditions from the S3 closure
+
+S3 closed with 302 proof audits and 21 compile-rejection checks. Carry forward
+link:s3-claude-closure.txt[the S4-1 through S4-5 obligations]:
+
+* S4-1: `render_frame_evidence` is proved for exact deterministic frames. For declared
+  framework faults, prove local output-constructor evidence or a failure-replacement
+  theorem. Do not assume `EvalSpec` equality for faulting runs. Preserve explicit
+  occurrence witnesses and row positions through `RowFor`/`RowsFor`.
+* S4-2: prove Machine's lawful monad and Sat bind/traversal rules, then interpreter
+  refinement for every graph constructor and output reconstruction.
+* S4-3: deterministic execution needs interpreter/denotation equality; reuse
+  `actual_response_eq` for authorization and conformance.
+* S4-4: compose Sat with explicit relaxed contracts (exact domain success or declared
+  framework failure), retaining exact success rows. Instantiate tenant authorization
+  and an independent list bound. Obtain the latter through its contract certificate,
+  rather than computing the example backend as S3's pure composition does.
+* S4-5: prove no resolver call for argument-error nodes, preserve error paths and
+  multiplicity, and cover all four list/nullability combinations.
+
+=== Implementation and proof
+
+*Build.* Refactor the actual execution path to interpret S1's execution DAG and output
+plan, using typed calls. Start with a sequential graph interpreter and output
+reconstruction; prove that this shipped path implements their denotation. P1 uses
+statically constructed typed operations. Preserve the current pure
+`Machine` design, but prove its algebra and continuations directly; its accumulated
+values are inside closures, not an inspectable state record.
+
+*How to prove it.* Define the following schematic predicate by structural recursion:
+
+[source,text]
+----
+Sat (done value) Q := Q value
+Sat (pending call resume) Q :=
+  Pre call AND forall answer, Post call answer -> Sat (resume answer) Q
+----
+
+Provide `LawfulMonad` for the machine and prove `Sat` rules for bind and list traversal. Prove the
+graph interpretation, structured-region traversal, and output completion by induction
+on their finite structure, using
+`Sat` with the generic result judgment as the conclusion. The pure interpretation theorem
+then follows by induction on `Machine`, supplying the concrete resolver postconditions.
+There are two proof routes with distinct purposes. For the deterministic pure backend,
+interpreter equality with plan denotation, the S1 lowering laws, and S1a consistency
+immediately yield authorization and conformance; do not duplicate that proof through Sat.
+The generic Sat route proves safety for permitted external faults and resource-limit
+failures and supplies S6's certified driver. It requires a separate bridge from row/node
+invariants and output completion to the hand-written AuthTree witness and erasure.
+A generic framework theorem alone is not that bridge.
+
+Establish scalar, object, list, null, and failure cases for both the application relation
+and independent `Conforms`/`EvalSpec`. Cover all four list/nullability combinations,
+nullable sibling preservation, and the error path and multiplicity through bubbling.
+A field error remains an error outcome even for non-null output; it cannot become an
+ordinary successful null. Paths use positions in the filtered resolver result.
+Include the specified argument-error branch now and prove it performs no resolver
+call. This branch must not require reopening the execution theorem when S5 arrives.
+
+The sequential pure interpreter terminates by the S1 structural measure and has no
+fuel parameter. Prove equality with total EvalSpec on all arbitrary snapshots,
+including legitimate domain failures. Separately prove error-free success under S0's
+explicit sufficient success conditions. The generic safety theorem covers named
+resource-exhaustion and internal faults when they satisfy the node/row contracts;
+it does not claim equality between faulting IO and the pure reference computation.
+This rules out a pure executor that serves only a demonstration query or invents failures.
+
+*Acceptance.* Instantiate generic fault-safety preservation twice: response authorization
+for the tenant program, and a whole-list length bound for a small independent example with
+no tenant facts. Use `items(first: Int): [String!]!`: missing/null means 20, negatives
+produce `BadLimit`, and nonnegative values are capped at 100. P1 supplies typed arguments;
+S5 later proves their text/variable coercion. Prove the concrete `take` implementation's
+bound and its preservation through null/failure completion at the selected path.
+
+The pure theorem quantifies over all P1 typed operations. Its target and the application's
+compiled entry point are the same definitions. After this gate, attempt the additional
+view theorem `run(snapshot, p, q) = run(view(p, snapshot), p, q)` for the tenant program.
+Filtering before ID lookup and identical missing/foreign outcomes make this plausible;
+its proof, including rebasing references, is separate from authorization and is required
+before claiming modeled output noninterference.
+
+== S2b Generate the shape that the proofs exercised
+
+S2b is complete and independently reviewed: link:s2b-status.adoc[generated application and proof gates]
+and link:s2b-claude-closure.txt[Claude closure]. The first proved application milestone is reached.
+S4b implementation and review status are recorded below.
+
+*Build.* Generate S2a's schema, bindings, adapters, and correspondence evidence. Keep
+the checked AST and independently supplied field-indexed implementation family as inputs.
+The generator must not define the meaning against which its own adapters are checked.
+
+*How to prove it.* Prove schema checker soundness and AST representation/normalization
+laws for P1. Emit per-artifact evidence checked against the independent agreement target.
+Instantiate the existing S3/S4 proofs using those certificates; do not re-prove the
+executor for generated code. Kernel evaluation of an independent decidable predicate
+is legitimate static evidence, but is not adapter behavior agreement.
+
+*Acceptance.* Mutate the generator itself to consistently swap both adapter mappings and
+its emitted mapping metadata; the independently anchored certificate or contract proof
+must fail. Use SDL and explicit model bindings for the running example. Applications
+prove domain facts, while generation supplies representation plumbing. The first proved
+application milestone closes here, after the generated route inherits the theorem.
+
+== S4b Prove one batching transformation
+
+S4b is complete and independently reviewed: link:s4b-status.adoc[scoped transformation, proofs and cost model]
+and link:s4b-claude-closure.txt[Claude closure]. S5 implementation and review status are recorded below.
+
+*Build.* After the unoptimized application theorem and generated bindings work, add
+one rewrite: batch the selected `Task.project` field calls across the already filtered
+task rows of owned projects in one eligible dependency wave. Each call performs one
+project lookup by the task's stored project ID. Gather these rows, deduplicate eligible
+reads by target project ID, load in bounded chunks, and scatter the outcomes back to
+every original task occurrence. Preserve the previously filtered task lists and their
+positions. Keep the unoptimized plan as a reference path.
+
+This target is deliberately an existing selected field-call node. It does not require
+inspecting an opaque `Project.tasks` resolver or extracting its internal task-ID lookups.
+The earlier `Project.tasks` loads remain unoptimized and outside this stage's reduced
+call count. Exposing internal loader plans requires the later certified plan-resolver API.
+
+Scope each batch to the same authenticated principal/policy, immutable snapshot,
+backend, and compatible arguments. The first rewrite covers deterministic read-only
+snapshot lookups. No mutation, arbitrary effect, cross-request result cache, or
+unproved SQL fusion participates. Operation-plan optimization must update the paired
+output plan and preserve every response occurrence, not just graph node values.
+
+*How to prove it.* Define an eligibility predicate from independently checkable plan
+structure and contracts, including the presence of the selected batch capability and
+its key-sufficiency law for the actual backend. The same key function determines
+representatives, scatter correspondence, and U in the call-count theorem. For the pure backend, prove that two owned tasks with the same scoped project ID have
+the same required-project lookup outcome. This field-specific key sufficiency theorem
+justifies deduplication even when parent task records differ. Then prove batch lookup agrees
+with single lookup at every input position, including missing keys and the exact first
+owned occurrence when IDs are duplicated. Prove deduplicate/scatter reconstructs the
+original sequence and preserves all per-occurrence paths and error multiplicities.
+A shared failed computation must still produce the errors required at its separate
+response positions. Use those laws to prove equality of complete structured responses,
+including ordered fields, list positions, data, public errors, and null propagation.
+
+State response equivalence over a deterministic backend function whose batch results
+equal its pointwise single-call results and whose capability key is sufficient for
+those same single-call outcomes, with the pure snapshot backend as a concrete
+instance. External IO adapters inherit certificate-level safety through S6's typed
+postconditions, not an equality between opaque IO computations. A whole-batch transport
+failure is not equivalent to selected per-key
+failures merely because both are permitted by an authorization predicate. Exactness
+requires the deterministic refinement law; generic fault safety remains separate.
+Preserve effect order for excluded operations by leaving their plans unchanged.
+
+Instrument the actual Machine program emitted by the batch strategy, counting its
+primitive-call constructors for a given answer sequence. A region/wave instance here
+spans all filtered task rows available across the project parents together; U counts
+distinct (scope, projectId) keys over those rows, not separately for each project. For capacity B > 0, prove
+at most ceil(U / B) total primitive calls issued for that transformed load, counting
+both single and batch calls. Require the certified batch capability to be present;
+the single-call fallback is outside this reduced-count theorem. This is a theorem about the counted Machine interpretation,
+not IO. Interpreting it as physical backend requests assumes one request per primitive
+and no retries. For multiple regions or dependency waves, sum their individual bounds;
+do not claim a single global bound. Record a concrete workload where the proved bound
+is strictly smaller than the reference path's count. Hidden backend work and wall-clock
+latency are outside this cost model.
+
+*Acceptance.* The actual transformed path has a response-equivalence theorem and
+inherits the application authorization theorem. Kernel-checked examples include repeated
+keys across parents, two owned records sharing an ID, cross-tenant targets, empty lists,
+chunk boundaries, per-item failure, and nested filtered error paths. Deliberately
+wrong scatter maps and unsafe scope combinations must fail the intended obligations.
+A backend-call benchmark corroborates the proved count without standing in for it.
+Finish this one optimization before pursuing a general optimizer or broader features.
+
+== S5 Check operations and coerce inputs with evidence
+
+Implementation and proof boundaries: link:s5-status.adoc[S5 status].
+CLOSED: link:s5-claude-closure.txt[Claude independently confirmed closure] with no
+remaining blockers; 593 proof-audit reports and 35 compile-rejection tests pass.
+S6a through S6d are CLOSED. The full S6 gate is closed; see link:s6-status.adoc[S6 status]
+and link:s6cd-claude-closure.txt[Claude closure]. S7 is next.
+
+S5 closure follow-up (S7/S8): generalize named coercion beyond the join example
+and migrate generated positional resolver APIs when generated multi-argument schemas
+are introduced. The reusable named binding builder and executed adapter-boundary
+proof are complete; an arbitrary-layout coercer is not claimed.
+
+S2b review follow-up: connect named argument coercion and canonical argument records
+to the resolver boundary. Execute a multi-argument field and reject a same-typed argument
+swap there. S2b's optional named helpers do not verify application positional destructuring.
+
+*Build.* Replace private-constructor-only plan status with validity and lowering evidence.
+Extend S0's surface semantics and define independent `ValidOperation` and input
+interpretation. `PlanDenotes` links the variable-parametric template to that surface
+meaning; instantiation then connects it to S1's guard-free IR denotation and the
+existing application-property bridge. Separate variable coercion from field argument coercion.
+
+*How to prove it.* Prove preparation soundness and meaning preservation into the resolved selection IR.
+Also prove bounded profile completeness:
+
+[source,text]
+----
+ValidOperation schema ast AND InProfile P2 ast AND WithinLimits schema ast
+  -> exists plan, prepare schema ast = ok plan
+----
+
+`InProfile` and `WithinLimits` must be independently inspectable syntax/resource
+conditions, not aliases for checker success. Derive a checker work bound if needed;
+publish limits rather than allowing arbitrary extra rejection inside the certified profile.
+
+Prove successful coercion yields the specified typed values, preserving omission,
+null, defaults, and argument meaning. Variable failures are public request errors with
+no resolver call. Argument failures take the field-error completion path. Literal and
+variable parsing remain outside the fidelity theorem, but their decoded values cannot
+bypass these checks. Add enum and recursive-input rules only when P3 enables them.
+
+*Acceptance.* Every admitted P2 AST reaches the actual S4 core, or a proved specified
+request/argument error branch. Valid in-profile requests within the stated limits
+cannot be rejected merely to make the safety theorem easy. Changes to defaulting or
+field/argument mapping break a meaning proof even when host types remain identical.
+
+== S6 Carry the proof into the narrow handler
+
+S6 is CLOSED after link:s6cd-claude-closure.txt[independent closure review].
+All 696 proof audits, 48 rejection fixtures and 65 HTTP checks pass.
+S6 is split into reviewable implementation slices; its full acceptance gate below
+remains unchanged and is now satisfied. No P3 features were added in S6.
+
+* S6a: certified effectful driver, explicit transport failure, request-indexed S5
+  execution. CLOSED: link:s6a-status.adoc[S6a status] and
+  link:s6a-claude-review.txt[Claude review]; 614 audits and 38 rejections pass.
+* S6b: CLOSED; link:s6b-status.adoc[S6b proof and validation status] and
+  link:s6b-claude-review.txt[Claude review]; 658 audits and 41 rejections pass.
+  Optimized fault Sat, including preparation/representative ownership,
+  compatibility and original-position reconstruction. Connect to S6a only with
+  this certificate; pure response equality is insufficient. Re-test transport abort
+  versus per-key faults on the actual optimized wave.
+* S6c: CLOSED; link:s6c-status.adoc[ordered encoding and wire certificate].
+* S6d: CLOSED; link:s6d-status.adoc[certified handler and HTTP validation].
+  Certified narrow handler, public failures, authentication/snapshot boundary
+  and LeanIO/HTTP tests through the same proof-carrying execution path. Include a
+  wrong-snapshot backend-answer certificate rejection and explicit handler-boundary
+  redaction; the S6a wrapper only catches exceptions in its wrapped backend call. Use the certified
+  batch transport entry explicitly, prove its early-rejection/no-backend branch,
+  and document that deduplication shares permitted faults across equal keys.
+
+
+S4b review obligation: before a faulting or external handler drives the optimized
+machine, prove Sat over the fault contracts for permitted preparation answers,
+representative membership/ownership, compatibility, and per-position fault reconstruction.
+Model whole-batch transport failure as a distinct declared outcome; do not scatter it
+as equivalent per-key failures. S4b's ownership lemmas cover the pure generated-adapter
+run only and do not establish this optimized fault-safety theorem.
+
+*Build.* Introduce a certified driver and a total, ordered response encoder for P2.
+The driver has this schematic type, with `Pre`, `Post`, and `Q` fixed to the same
+principal, snapshot, schema, and computation:
+
+[source,text]
+----
+driveCertified [Monad m]
+  (program : Machine Call Answer Result)
+  (proof : Sat program Q)
+  (backend : forall c, Pre c -> m {a : Answer c // Post c a})
+  : m {result : Result // Q result}
+----
+
+*How to prove it.* Define the driver by recursion on the actual `Machine`. At a pending
+call, extract `Pre` and the continuation obligation from `Sat`, obtain a certified
+answer, and recurse with its proof. At `done`, return the value with `Q`. This carries
+evidence through any effect monad without inventing a semantic model of opaque IO.
+A pure backend constructs the evidence using S3. An external backend must supply this
+producer through the explicit `BackendRefines` parameter or stay outside the certified
+path. A postcondition annotation alone does not verify an external database. S4b batch
+primitives must also provide their vector/per-key postconditions through this same
+certified backend interface; batch mode cannot bypass the driver contract.
+
+If a driver catches an exception and returns a value, the replacement error must have
+an allowed-postcondition proof, normally for a named `InternalError`. Otherwise the
+exception prevents a result; no liveness claim follows. Defer scheduling/trace
+properties until concurrency or batching requires them.
+
+Define `EncodesOrderedJSON` with an independent grammar or reference decoder. Replace
+the current partial encoder with a total implementation; prove escaping, numeric
+encoding, data/errors envelopes, bubble-to-root-null conversion, and String-to-UTF-8
+preservation. Prove encoding round-trip where a decoder is used, not a relation defined
+by calling the encoder. Define `AuthorizedWireResponse` by existence of a structured
+response satisfying both the independent encoding relation and `AuthorizedResponse`.
+
+Construct the handler from proof-carrying results. Before a snapshot is in scope, a
+pure `prepareRequest(publicSchema, request)` returns a prepared operation or a certified
+public failure. Cover media negotiation, body limits, JSON/envelope decoding, parsing,
+validation, operation selection, and variables. Those failure builders receive only
+request/public-schema data, not snapshot values or backend exception strings.
+Authentication/acquisition failure and caught internal exceptions use named public
+errors. Execution error paths and filtered list indices are covered too.
+
+On success, authenticate per request, capture one immutable snapshot, and construct
+the certified backend from that principal and snapshot. The authenticated core returns
+an effectful subtype certifying its wire response for those exact inputs. The LeanIO
+wrapper takes the bytes from that subtype, or from the public-failure builder; it does
+not execute a separate raw resolver closure. The external `AuthSound` assertion connects
+the supplied principal to the real caller, rather than appearing as an unprovable Lean
+fact about an opaque authentication service.
+
+*Acceptance.* Define `runTenantProgram` explicitly as prepare, coerce, certified execute,
+and encode; give the actual handler a corresponding branch-by-branch type guarantee.
+The route returns only certified application bytes or certified public-failure bytes.
+Test the narrow HTTP route against the proved in-memory backend, including early
+failures and exception redaction. Native execution and network delivery remain trusted;
+HTTP tests do not prove them. Finish this gate before adding P3 features.
+
+S6c/S6d review follow-ups beyond this gate: prove ordered-JSON grammar injectivity
+or connect a verified JSON decoder; retain the full decoded request at the HTTP
+boundary if a future theorem needs more than the currently indexed caller credential.
+Header/body extraction and parser fidelity remain explicitly tested boundaries.
+
+S6b closure follow-up for broader schemas (S7/S8): refine generic wave compatibility
+from all vectors to representative chunks or suitable member sub-vectors before
+introducing nontrivial compatibility constraints. The tenant predicate is True.
+
+== S7 Extend the surface language without replacing the core proof
+
+*Build.* Add the P3 features in small sub-slices. Each lowers to the existing resolved
+IR and remains disabled on the certified path until its evidence is complete.
+
+*How to prove it.* Extend the independent surface semantics, validation, coercion, and
+lowering certificates:
+
+* Aliases alter keys and paths, not field identity or the field's contract.
+* Grouped repeated fields preserve selection meaning, response shape, order, and the
+  specified invocation behavior.
+* Directives lower to template guards, eliminated during proved instantiation.
+  Disabled branches cannot add response data.
+* Inline fragments and interfaces/unions lower to per-concrete-type selections with
+  membership evidence. Each descended object still needs its own invariant.
+* Enums and recursive inputs preserve their declared interpretation through decoding.
+* `__typename` is an explicit public metadata rule. Full introspection stays excluded.
+
+The existing core theorem is instantiated through lowering preservation; any change
+to the core IR itself requires revisiting its theorem. Extend the handler certificate
+for each enabled feature, not only a pure model test.
+
+*Acceptance.* New syntax inherits the same response guarantees down to encoded output.
+Cover disjoint branches, nested list failures, conflicting aliases, guarded repeated
+fields, and error paths. Keep a precise proved/tested/excluded profile matrix.
+
+== S8 Demonstrate generality and keep proofs practical
+
+S4b follow-up: prove general primitive-count correspondence between original
+Runtime.execute and the staged sequential reference. S4b's universal accounting covers
+the staged reference; original Runtime counts are pinned on the concrete workload.
+
+S2b scaling follow-up for S8: measure a generated 800-field artifact end to end,
+including adapter agreement and per-field argument proofs, before larger-schema claims.
+The S2b entry benchmark measured schema correspondence only.
+
+*Build.* Finish the end-to-end bounded-pagination instance already exercised in S4.
+Prove the requested-limit interpretation, concrete resolver bound, completion lifting,
+and encoded bound at the selected path. Reuse the generic machinery; its ability to
+express a second property has already been tested before validation/HTTP expansion.
+
+*How to prove it.* Use a concrete bounded-list implementation and length lemmas,
+then instantiate the existing lifting rules. A requested limit alone is insufficient;
+the actual resolver must enforce it. Bounds on list length do not by themselves bound
+database work, total response bytes, or wall-clock latency.
+
+Measure proof generation and checking for ordinary examples, large individual objects,
+mutually recursive input groups, and mixed schemas. Record time, peak memory, and
+resolver-only rebuild behavior. Existing measurements show why the scalar-only
+300-type benchmark is insufficient; see
+link:prototype-benchmark.json[the benchmark record] and
+link:prototype-claude-rereview.txt[the re-review's scaling findings].
+
+Optimize only with an agreement argument: interned lookup must preserve lookup results,
+input dependency grouping must preserve declarations, and faster merge grouping must
+preserve selection semantics. Keep a simple proved reference where useful and prove
+refinement to the optimized shipped function. Do not silently replace kernel evidence
+with compiler-trusting evaluation to meet a performance target.
+
+*Acceptance.* Two different application properties use the same public contract API.
+Routine users can define SDL and resolvers without proofs; users opting into stronger
+guarantees prove domain facts while generation supplies representation plumbing.
+Performance results identify both the workload and proof trust profile.
+
+== The theorem chain to keep visible
+
+These are target statements for review, not compiled Lean declarations. In particular,
+`admitted` abbreviates the explicit profile, validity, coercion, and limit conditions
+from S5, never an unknown additional safety premise.
+
+[source,text]
+----
+checkSchema demoAst = ok schema
+  -> WellFormedSchema schema AND Represents demoAst schema
+
+GeneratedAgreement demoAst independentBindings generated
+  -> each adapter denotes its independently designated field implementation
+
+lowerP1 selection = ok ir
+  -> ValidPSelection selection AND
+       SelectionDenotes domainFieldMeanings ir = EvalSpec domainFieldMeanings selection
+  -- S0's independent meaning anchors the IR; S3 proves the concrete resolver meanings
+
+PlanDenotesResolved (plan ir) ir
+  -- typed graph denotation followed by its output plan equals SelectionDenotes
+
+PlanDenotesResolved operationPlan ir AND SelectionDenotesSurface ir selection
+  -> OperationPlanDenotesSurface operationPlan selection
+
+ValidOperation selection
+  -> AuthorizedResponse snapshot principal selection
+       (EvalSpec (tenantMeanings snapshot principal) selection)
+  -- S1 consistency proof; no executor or global snapshot-isolation premise
+
+tenantResolvers_satisfy_contracts snapshot principal
+  -- proved for the concrete definitions, for every finite snapshot
+
+Sat (executeOperation operationPlan) (GenericResultSpec selection)
+  -- for any adapter satisfying the independent agreement interface
+
+GenericJudgment tenantSpec result AND OperationPlanDenotesSurface operationPlan selection
+  -> AuthorizedResponse principal snapshot selection result
+  -- a separate proof into hand-written AuthTree; likewise for the list-bound property
+
+EligibleBatchRewrite original capability AND DeterministicBatchRefinement backend capability
+  AND KeySufficient backend capability.key AND matching request scope
+  -> observe(runPure backend (batchRewrite original) request)
+       = observe(runPure backend original request)
+  -- observe includes ordered structured data, errors, paths, and null propagation
+
+B > 0 AND EligibleBatchRewrite original capability AND capability is present
+  -> countedPrimitiveCalls (transformedLoad regionWave)
+       <= ceil(distinctKeys capability.key regionWave / B)
+  -- count every single and batch primitive for this load; exclude the fallback strategy
+  -- physical request interpretation additionally assumes one request per call, no retries
+
+prepare schema operationAST = ok plan
+  -> ValidOperation schema operationAST AND PlanDenotes plan operationAST
+
+ValidOperation schema ast AND InProfile ast AND WithinLimits schema ast
+  -> exists plan, prepare schema ast = ok plan
+
+admitted request
+  -> AuthorizedResponse principal snapshot request
+       (runTenantModel snapshot principal request)
+  -- no SnapshotWellFormed assumption in safety
+
+concrete pure backend
+  -> for every in-profile operation and arbitrary snapshot,
+       runTenantModel equals total EvalSpec and Conforms to the selection
+
+explicit success conditions AND concrete pure backend
+  -> every in-profile operation has no errors
+  -- the pure interpreter is structurally terminating; no fuel premise
+
+encoding_preserves:
+  EncodesOrderedJSON (encodeResponse response) response
+
+driveCertified(program, satProof, certifiedBackend)
+  : m {result // GenericResultSpec result}
+
+authenticatedHandler principal snapshot preparedRequest certifiedBackend
+  : m {wire // AuthorizedWireResponse principal snapshot preparedRequest wire}
+
+actual LeanIO route:
+  early branch -> a certified public failure with no snapshot dependency
+  execution branch -> bytes projected from authenticatedHandler's certificate
+----
+
+`runTenantModel` is the structured pure interpretation. `runTenantProgram` is the
+complete prepared/coerced/executed/encoded pipeline. The handler certificate covers
+all of its returned branches, not merely the successful pure expression. Authentication
+and snapshot acquisition fix the concrete inputs of the execution certificate. There
+must be no existential choice of a convenient principal to justify already-produced data.
+In the application-property statements, `request` denotes the instantiated selection
+obtained from the operation and coerced variables, linked by `PlanDenotes`; it does not
+silently substitute HTTP bytes for the selection type used by the independent judgment.
+
+== Repository changes and migration
+
+[cols="2,3",options="header"]
+|===
+|Current area |Planned change
+|`GraphQL/Schema.lean`
+|Introduce the indexed schema interface and independent profile/representation judgments; retain legitimate static evidence
+|`GraphQL/Value.lean`, `GraphQL/Machine.lean`
+|Replace the constant raw answer family on the certified path; preserve explicit resolver failure
+|`GraphQL/Derive.lean`
+|After exercising the manual shape, generate artifacts checked against canonical field identities and independent bindings
+|`GraphQL/Validation.lean`
+|Produce resolved-IR certificates, prove coercion and bounded profile completeness, and move merging out of the core
+|`GraphQL/Execution.lean`, `GraphQL/Response.lean`, `GraphQL/LeanIO.lean`
+|Prove actual execution with Sat, implement the certified driver, and cover encoding and every returned handler branch
+|New `GraphQL/Plan/` modules
+|Typed graph/region and output-plan representations, independent denotation, sequential interpreter, and certified batch rewrite
+|New `GraphQL/Contracts/` modules
+|Define reusable resolver specifications, lifting rules, and composition theorems
+|New `Example/Tenant/` modules
+|Provide the concrete model, SDL, resolvers, proofs, successful witnesses, and HTTP integration
+|`Tests/`, `scripts/check`
+|Audit theorem dependencies and assumptions; retain negative compilation and semantic tests
+|===
+
+Keep the existing implementation as a regression reference while migrating one
+proved profile. Give checked and legacy execution paths explicit identities; the
+certified API must never silently fall back to an unproved implementation. Once the
+proved path covers a feature, make it the application's execution path. A separately
+maintained toy interpreter is not the product.
+
+== Evidence required to close every slice
+
+. State the property, domain, assumptions, and excluded observations before implementing it.
+. Identify the executable definition covered by each theorem and its caller in the application.
+. Build the proof and inspect its axioms and relevant dependencies. Reject placeholders,
+  unsound axioms, unchecked casts, and unreviewed implementation substitutions.
+. Keep independent examples and counterexamples, plus nontrivial successful executions.
+. Check that schema/resolver changes invalidate the appropriate artifacts and evidence.
+. Label remaining guarantees as type-enforced, proved, tested, or assumed.
+
+Review the theorem's meaning as well as its kernel acceptance. An axiom listing alone
+is not a complete audit of native execution or substituted implementations. Lean's
+https://lean-lang.org/doc/reference/latest/ValidatingProofs/[proof validation guidance]
+provides the baseline for this review discipline; re-check tooling must be compatible
+with the project's pinned Lean version.
+
+A practical proof-failure regression may alter a tenant filter, wire two same-typed
+fields incorrectly, or corrupt a null-propagation branch in a temporary fixture.
+Run these fixtures automatically and check the intended failing declaration and
+semantic obligation. A syntactically broken file or unrelated type error does not
+demonstrate that the intended obligation was enforced.
+
+== Work after the first proved application
+
+[cols="2,3",options="header"]
+|===
+|Extension |Proof approach
+|Author-written plan resolvers
+|Require each field plan to denote its independently designated field meaning, preserve row/output invariants, and declare effects. Only certified plans enter the optimized path; S1-S4b use verified lowering instead.
+|Stronger tenant isolation
+|Generalize the S4 view result to more features and observations. Relate snapshots that agree on the permitted view; timing and external effects need separate models.
+|Mutations
+|Model state transitions, prove invariant preservation and a frame property for other tenants, then prove serial execution respects those transitions. Database commit behavior remains an explicit boundary.
+|Execution cost certificates
+|Prove bounds from enforced list cardinalities and modeled per-field work, including actual branching and merging. Add backend cost assumptions separately.
+|Caching and plan optimization
+|Prove observational equivalence under stated purity, snapshot, context, and policy-identity conditions. Arbitrary effectful resolvers cannot be reordered freely.
+|Schema evolution
+|Prove preservation for a declared operation set; distinguish validation compatibility, response shape, and application behavior.
+|===
+
+Federation, subscriptions, distributed planning, broad plugin support, and additional
+transport features wait until the application proof chain works. They require their
+own semantics and cannot inherit the initial theorem merely by using Lean.
+
+== Compatibility references and retained implementation choices
+
+Use the https://spec.graphql.org/September2025/[September 2025 GraphQL specification]
+as the language reference while publishing a smaller proved profile. The
+https://spec.graphql.org/September2025/#sec-Handling-Execution-Errors[execution error rules]
+and https://spec.graphql.org/September2025/#sec-Field-Selection-Merging[field merging rules]
+guide the completion and selection judgments; the model must identify any stricter
+prototype behavior explicitly.
+
+Keep LeanIO as the replaceable transport adapter. The current local manifest pins
+`0bb212d57f3dba2d76cf601f76a7c431a51c902e`; the project toolchain is Lean 4.33.0.
+These pins are implementation baselines, not part of the application's logical theorem.
+The installed package and link:../lake-manifest.json[manifest] are the authoritative
+local dependency record.
+
+Use https://docs.rs/async-graphql/7.2.1/async_graphql/[async-graphql 7.2.1] as a reference
+for resolver ergonomics and interoperability. The differentiating acceptance test
+for this project is the application theorem and its connection to shipped code.
+
+
+=== Grafast planning reference
+
+The https://grafast.org/grafast/operation-plan/[operation-plan documentation] separates
+execution graphs, runtime layers, and response reconstruction. Its
+https://grafast.org/grafast/step-classes/[step contract] requires batch cardinality and
+position alignment and warns that per-item asynchronous work can reintroduce N+1.
+S1 models those obligations explicitly; S4b proves one scoped batching improvement.
+Grafast compatibility, verification of its implementation, a general optimizer, and
+unconditional performance claims are not deliverables of this revision.

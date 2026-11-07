@@ -1,0 +1,129 @@
+= S2b: generated bindings with independent proof targets
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:toc:
+
+== Status and application theorem
+
+S2b is complete and independently reviewed. Claude confirmed closure with no remaining
+blockers after rerunning all checks: link:s2b-claude-closure.txt[closure review].
+All findings from link:s2b-claude-review.txt[the initial review] are resolved; see
+link:s2b-review-resolution.adoc[the changes and assigned later-slice obligations]. `Example/Tenant/Generated.lean` is generated
+from the existing SDL, with the separately maintained `Binding.demoAst`, carrier
+models, request scope, public error type and `Binding.independentBindings` as inputs.
+The generator never emits the application's resolver implementations or their meaning.
+The only supported application input is the canonical `BindingsByField` family;
+`Resolvers` is internal representation plumbing. Agreement covers records constructed
+by `fromCanonical`, not arbitrary manually filled `Resolvers` records. The application
+uses that independent family itself, so its specialization is reflexive. The substantive
+representation theorem is universal identity of dispatch on canonical coordinates;
+S2a/S3 separately prove the supplied family's domain behavior.
+Named schema and argument-layout equality pins in `S2bProofs` make the definitional
+connection between generated and hand-written evidence explicit.
+`S2bProofs.generated_execution` specializes S4's universal execution theorem to this
+adapter for every request and checked P1 operation. Authorization, conformance and
+tenant-view response equality follow through the same certificates. The native
+`graphql-tenant` demo now runs this generated adapter through `Runtime.execute`.
+
+== Entry gates and argument identity
+
+`IndexedSchema.argumentLayouts` retains argument names and original GraphQL type
+references. `FieldRepresents` checks exact equality to the AST arguments as well as
+the existing scalar/product encoding and output correspondence. A same-typed name
+swap therefore cannot pass representation checking.
+
+`Arguments.lean` defines canonical AST-coordinate argument records, typed tuple
+projections, pack/unpack inverses and projection agreement. Records are dependent
+functions indexed by the argument's position, with `NamedArgument` accessors carrying
+a proof that the AST name at that position is the requested name. This intentionally
+uses canonical records rather than independently generated record fields: swapping
+both a generated getter and tuple packer cannot redefine the agreement target.
+Empty argument lists normalize to Unit; singleton lists to their scalar representation;
+longer lists to right-associated products. Optional values preserve omitted/null/value.
+These records and named accessors are optional checked helpers; they are not used on
+the current resolver execution path. `FieldBinding.single` still consumes positional
+arguments. Correct interpretation of those positions remains an application obligation,
+covered by its domain proofs. The tenant has only one argument. S5 must connect named
+coercion to these records at the resolver boundary and execute a multi-argument field
+with a same-typed swap rejection; the current fixture does not establish that boundary.
+`arguments_encoding_code` relates every successful positional encoding to the canonical
+record code, independent of a particular generated artifact.
+Unsupported input types are excluded by checked schema correspondence; the total
+argument helper's fallback does not authorize such schemas.
+
+The regression fixtures reject swapped names/layouts, same-typed tuple components,
+and falsely named accessors. The generated broader fixture exercises reordered object
+indices, recursive outputs, names such as `_root_` and `type`, three arguments including
+two strings, and distinct omitted/null/value inputs.
+
+== Generator and trust boundary
+
+`GraphQL/Plan/Generate.lean` emits Lean source. `tools/GenerateTenant.lean` parses the
+SDL and supplies independent application references. Run:
+
+[source,shell]
+----
+scripts/lake build GraphQL.Plan.Generate Example.Tenant.GenerationFixture
+scripts/check --generate
+scripts/check
+----
+
+Each artifact proves equality of its emitted AST with the supplied independent AST,
+well-formedness and indexed representation, per-field argument projection and both
+roundtrip laws, and adapter agreement for every independently supplied binding family.
+The application agreement then specializes this universal theorem. Ordinary kernel
+checking, not confidence in the emitter or its metadata, admits the artifact.
+
+The parser is not universally verified: a generated artifact proves agreement with
+the independent AST for this input, and executable tests check the SDL fixture. This
+is per-artifact validation, not a parser completeness theorem. The generator accepts
+the existing restricted P1 profile and nonempty object field lists. Application type
+names/references in its configuration are trusted code inputs, not untrusted SDL text.
+
+The mutation regression changes the generator's actual Project.id/title dispatch and
+its descriptive metadata together. It reconstructs type-correct bindings with swapped
+single functions, ensuring rejection is behavioral agreement rather than merely a
+field-index type error. Compilation must fail specifically inside `adapter_agreement`.
+A separate positive counterexample theorem compiles against the actual mutated dispatch:
+it proves that its Project.id result differs from the independent application's result.
+The original independent functions and binding family are unchanged. The emitted
+metadata is not used to prove agreement.
+
+The generated record retains each complete `FieldBinding`, including its optional
+batch capability indexed by the exact single implementation. `generated_batch_slot`
+proves the existing Task.project capability survives unchanged; its exact and key
+laws remain attached. This adds no optimizer, batch cost claim, or effectful IO proof.
+
+== Measured certificate strategy
+
+Before choosing the strategy, the original Python benchmark (now available as
+`scripts/check --benchmark s2b`) measured two fresh runs each
+of 72-field and 800-field schemas with recursive object outputs and two arguments per
+field. It compared one representation certificate against per-object certificates;
+both include global well-formedness checking. Per-object composition cost was excluded,
+so that variant had no hidden disadvantage from composition in this comparison.
+Raw results: link:s2b-entry-benchmark.json[measurements].
+
+At 800 fields, monolithic correspondence took 8.119/8.261 seconds and peaked at
+2.891/2.911 GB RSS; per-object certificates took 12.926/13.264 seconds and peaked at
+2.939/2.974 GB. The measurements support choosing one schema-correspondence proof. Argument and
+binding proofs are emitted separately for organization; their costs were not measured
+by this benchmark. These are limited local kernel-evidence measurements, not full
+generator or runtime benchmarks. An end-to-end generated 800-field artifact, including
+adapter agreement and all argument theorems, must be measured before S8 or larger-schema
+claims. Memory remains a scaling concern; the earlier
+3,000-field scalar workload used about 5.57 GB. No broad scalability claim is made.
+
+== Validation and remaining work
+
+`scripts/check` builds the generated application, checks deterministic regeneration,
+compiles the broader fixture, verifies the generator mutation rejection, runs semantic
+and native demo checks, audits every public tenant/plan theorem, and checks all existing
+compile-rejection fixtures plus the three argument gates. The completed run passed
+445 proof audits and 26 compile-rejection tests, in addition to regeneration, the
+generator mutation test and the broader generated fixture.
+
+S4b is next: an actual scoped batching transformation, response-equivalence proof and
+backend-call bound. S2b proves the generated route inherits the application guarantees;
+it does not prove a performance optimization. S5 retains text operation preparation and
+coercion; S6 retains certified external effect handlers and transport integration.

@@ -1,0 +1,301 @@
+S6c + S6d REVIEW (full S6 closure)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Checked against:
+- roadmap "S6 Carry the proof into the narrow handler": Build, How to prove it, the
+  EncodesOrderedJSON / AuthorizedWireResponse requirements, the handler paragraphs and
+  Acceptance, and the S6d bullet's carry-overs;
+- planning/s6c-status.adoc and planning/s6d-status.adoc;
+- my S6a and S6b reviews.
+
+Read in full:
+- GraphQL/Plan/WireScalar.lean, WireEncoding.lean and GraphQL/Response.lean.
+- Example/Tenant/WireResponse.lean, PublicRequest.lean, CertifiedHandler.lean, Http.lean,
+  Server.lean, CertifiedMain.lean, S6cProofs.lean and S6dProofs.lean.
+- Tests/WireRawControl, WireDroppedErrors, HandlerWrongPrincipal, HandlerForeignSnapshot,
+  HandlerRawBody.
+- scripts/test_s6_http.py, the check.py pins and escape-hatch scan, and the proof_audit.py
+  char-literal lexer change with its self-tests.
+- CertifiedBatchExecution.transport_rejected_without_backend.
+
+Ran (after confirming /private/tmp/lg-s6-check.log had finished and no build was running):
+- python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s6cd.out:
+  - 696 audit reports. 94 use no axioms; the rest use only propext, Quot.sound and
+    Classical.choice. No sorryAx.
+  - All 46 expected compile failures pass, including the five new fixtures.
+  - The escape-hatch scan (sorry, admit, unsafe, axiom, native_decide, extern,
+    implemented_by, skipKernelTC) passes.
+  - Native lines S6a, S6b, S6c and S6d all print.
+- python3 scripts/test_s6_http.py: all 30 certified HTTP checks pass
+  (.lake/review5/http-s6.out).
+- python3 scripts/test_http.py: all 35 legacy HTTP checks pass
+  (.lake/review5/http-legacy.out).
+Rerun after the credential-indexed Outbound update, with no other build running:
+- python3 scripts/check.py: exit 0, 696 audit reports, no sorryAx, and 47 compile rejections
+  including HandlerForeignCredential (.lake/review5/check-s6cd-2.out).
+- test_s6_http.py: 30/30.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started. Nothing in P3 was looked at.
+
+VERDICT: S6c CLOSES. S6d DOES NOT YET CLOSE. FULL S6 STAYS OPEN, pending one small fix (B1).
+- The encoding, the authenticated core, preparation ordering, the optimized backend path,
+  redaction and the foreign-snapshot rejection are all sound and correctly scoped.
+- The gap is in the handler-level type. The certificate leaving runTenantProgram no longer
+  says which snapshot the bytes are authorized against, and nothing constrains that snapshot.
+- The fix is local, about 10 to 20 lines, and needs no change to S6a, S6b or S6c. Once B1 is
+  fixed, I expect S6 to close without another review cycle beyond a confirmation check.
+- The mid-review Outbound strengthening (credential-indexed) is included below. It largely
+  resolves M1 but not B1.
+
+=====================================================================================
+S6c: ORDERED WIRE ENCODING (CLOSES)
+=====================================================================================
+Independent, non-vacuous grammar.
+   - EncodesOrderedJSON / Elements / Members (WireEncoding.lean:7-27) is an inductive grammar.
+     No constructor mentions ResponseValue.encode, quote or integer.
+   - Strings go through Quoted/Content/Escaped (WireScalar.lean:13-44), which are stated
+     about characters:
+     - raw requires 32 ≤ c, c ≠ '"' and c ≠ '\\';
+     - quote and backslash have their own productions;
+     - control requires c < 32, with lowercase hex digits defined numerically by Hex, not
+       by Nat.digitChar.
+   - Integers go through Decimal/Integer, a positional decimal with no leading zeros
+     (the `more` constructor requires a positive prefix) and '-' only for negSucc. So there
+     is no "-0".
+   - The grammar is non-vacuous in both directions:
+     - encode_correct and quote_correct show it is inhabited by the real encoder;
+     - the positive refutations raw_newline_rejected, wrong_boolean_rejected,
+       shifted_path_rejected and dropped_errors_rejected show it rejects wrong texts;
+     - fixtures WireRawControl and WireDroppedErrors.
+   - The roadmap's alternative ("independent grammar or reference decoder") was chosen, and
+     the status says so honestly.
+Escaping, integers, UTF-8.
+   - escape_char_correct, content_correct and quote_correct cover every Char. Lean Chars
+     exclude surrogates, so lone-surrogate output cannot occur. DEL and non-ASCII are emitted
+     raw, which JSON permits.
+   - digits_correct, by well-founded recursion, and integer_correct cover all of Int, with
+     no bound. numbers checks ±12345678901234567890.
+   - utf8_preserves: `text.toUTF8.utf8Decode? = some text.toList.toArray` through core's
+     List.utf8Decode?_utf8Encode. This is a decoder round-trip, not a relation defined by the
+     encoder.
+   - EncodesBytes composes the two: the bytes decode to a text in the grammar.
+Total ordered encoder.
+   - ResponseValue.encode is now total (termination_by sizeOf).
+   - Members and Elements keep list order, so field order is preserved. ordered_fields
+     checks `{"z":1,"a":2}`.
+   - The legacy byte change (newline now written as \u000a) is valid JSON, and the legacy
+     HTTP suite passes.
+Data, errors, path and root-bubble semantics.
+   - ValueMeaning, PathMeaning, ErrorMeaning and ErrorsMeaning are independent inductive
+     relations. ResponseMeaning has two cases:
+     - `{"data":…}` when there are no errors;
+     - `{"data":…,"errors":[…]}` with errors nonempty, kept in order, each `{message, path}`.
+     So data is always present, and null after a root bubble.
+   - Path indices are carried as Int.ofNat of the Spec index. The filtered coordinates come
+     from S6b's reconstruction.
+   - bubble_encodes_root_null is encode_correct at Spec.envelope (.bubble errors). The proof
+     only checks because the envelope reduces to ⟨.null, errors⟩ by definition, so root-null
+     conversion is fixed definitionally. root_bubble_wire and the native test check the exact
+     bytes `{"data":null,"errors":[{"message":"Internal error","path":["projects",0]}]}`.
+   - Public messages come from a closed four-entry vocabulary (Message). No resolver or
+     exception text can reach an error message.
+AuthorizedWireResponse.
+   - Defined as ∃ structured, AuthorizedResponse s p sel structured ∧
+     EncodesResponse structured bytes, as the roadmap specifies. encodeAuthorized
+     constructs it.
+S6c findings (Low, not blocking)
+C-L1 Unambiguity of the grammar is not proved. There is no theorem that
+     EncodesOrderedJSON v t ∧ EncodesOrderedJSON v' t → v = v'.
+     - The roadmap does not require it, and the canonical escape productions make it true in
+       fact.
+     - It is the property a decoder round-trip would have given for free.
+     Optional, but it would make "the bytes mean this response" a theorem rather than a
+     reading of the grammar.
+C-L2 Message mirrors the `message` table. It is independent only in the sense of being a
+     relation. That is acceptable for a closed vocabulary.
+
+=====================================================================================
+S6d: CERTIFIED NARROW HANDLER (ONE BLOCKER)
+=====================================================================================
+What is verified
+Request preparation, including variables, before any principal or snapshot.
+   - prepareRequest (PublicRequest.lean:75-92) is a pure Except over the public request
+     only. It covers media negotiation, method, content type, the 65536-byte body limit,
+     JSON and envelope decoding, the 32768-character query limit, parsing, operation-name
+     selection, P2 prepare, and variable coercion with VariablesMeaning evidence.
+   - Ready carries Prepared (so ready_valid gives Valid, InProfile and WithinLimits) and the
+     interpreted environment.
+   - runTenantProgram matches on prepareRequest before any effect.
+     rejected_before_effects (a kernel theorem) gives no auth, snapshot or call effects on
+     any preparation failure.
+   - In the native and HTTP tests, a missing variable, a parse error or a malformed body
+     each do zero work. In the five fault launch modes, a bad body still yields 400 before
+     any effect.
+   - Failure builders take only Failure and Media (publicReply). No snapshot or exception
+     value is in scope.
+Exact authenticated inputs in the core.
+   - CoreGood ready context (CertifiedHandler.lean:32-39) fixes both context.snapshot and
+     context.principal in the type.
+   - authenticatedCore builds its success branch only from the S6b Guarantee returned by
+     CertifiedBatchExecution.runPreparedTransport for that same context, together with
+     Wire.encode_correct.
+   - Authentication returns {principal // AuthSound credential principal}.
+   - HandlerWrongPrincipal shows that demoAuthenticate cannot return tenant 2 for the
+     tenant-1 token. wrong_authenticated_tenant is the positive counterpart.
+Actual optimized backend path, no bypass.
+   - authenticatedCore calls CertifiedBatchExecution.runPreparedTransport, which is the S5
+     executeKey dispatcher and the optimized Machine, with redactTransport wrapped around
+     the supplied Transport. This settles S6b L5.
+   - `(run batched).2.calls == 9` matches the S4b 12-to-9 count on the deployed path.
+   - Bytes are produced only by Wire.encode inside the certificate, or by publicReply.
+   - Http.respond takes `Outbound` and sends `reply.bytes` through fromBytes. HandlerRawBody
+     shows that a raw Reply cannot be sent.
+   - There is no raw resolver closure, and no second serializer on this route: the legacy
+     GraphQL.encodeCompletion is not imported by the route.
+   - transport_rejected_without_backend holds for any monad (S6b L2, resolved).
+Redaction, including outer exceptions.
+   - Exceptions are caught at three layers:
+     1. redactTransport inside the core: a backend exception becomes TransportFailure,
+        which is reported as Failure.transport.
+     2. try/catch in runTenantProgram around authenticate, acquire and the core: becomes
+        Failure.internal.
+     3. try/catch in Http.receive around the header checks, body read and the whole
+        program: becomes Failure.internal.
+   - Every catch discards its payload, and every failure is a member of the closed Failure
+     vocabulary.
+   - The native tests (auth, acquire and backend throwing "SECRET") and the HTTP modes
+     (auth-throw, snapshot-throw, snapshot-none, backend-throw, transport) all return public
+     bytes with no "SECRET". This settles S6a L1.
+Actual foreign-snapshot Post rejection (S6a L2, resolved).
+   - foreign_snapshot_answer_rejected: under otherRequest (same principal ⟨1⟩, a different
+     snapshot) and with the same task key "shared", the answer firstTarget computed from the
+     original snapshot fails Fault.Post for taskProject.
+   - HandlerForeignSnapshot fails at Contract.Expected.
+   - This is the sharper fixture I asked for in S6a.
+Deduplication sharing faults (S6b L4) is documented in the roadmap bullet and in S6b's
+status.
+
+BLOCKER
+B1 The handler-level certificate leaves the snapshot existential and unconstrained.
+   - GoodReply.application (CertifiedHandler.lean:16-22) binds `principal` and `snapshot` as
+     implicit constructor arguments.
+   - `principal` is tied to the real request through
+     `authenticated : AuthSound request.credential principal`.
+   - `snapshot` has no constraint at all: the bytes are AuthorizedWireResponse for *some*
+     snapshot.
+   - promote (lines 73-82) makes this concrete. It accepts an arbitrary `snapshot : Snapshot`
+     and turns any CoreReply for ⟨snapshot, principal⟩ into a CertifiedReply.
+   - AuthorizedResponse is only relative to its snapshot. A snapshot containing another
+     tenant's rows relabeled with this principal's tenant would therefore certify bytes
+     disclosing that data.
+   - So the type of runTenantProgram, which is what the roadmap acceptance asks to carry
+     "the composed guarantee", certifies only three things for an application reply:
+     preparation, the identity, and a shape-correct response over some data store.
+   - The tenant-isolation link to the acquired store exists only in the code of
+     runTenantProgram, which passes the acquired snapshot to the core. The type does not
+     record it.
+   - The status sentence "CoreGood fixes the exact principal AND snapshot" is true of
+     CoreReply. But the trust-boundary section does not say the handler guarantee is
+     existential in the snapshot, or that acquisition soundness is assumed.
+   Required fix (either option is acceptable):
+   (a) Preferred, parallel to AuthSound: add an explicit `AcquireSound : Principal →
+       Snapshot → Prop` parameter.
+       - Acquire returns m (Option {s // AcquireSound principal s}).
+       - GoodReply.application carries `acquired : AcquireSound principal snapshot` next to
+         `authenticated`, with the same `snapshot` used in `authorized`.
+       - promote takes the subtype.
+       - Demo: DemoAcquireSound _ s := s = S4bProofs.request.snapshot, or the demo store.
+       - Add one negative fixture: a promote with an unrelated snapshot fails to typecheck.
+       - List AcquireSound with AuthSound as an external trust assumption in s6d-status.
+   (b) Minimal: index the handler result by the acquired snapshot, for example a CertifiedReply
+       variant whose application branch exposes the snapshot value that acquire returned,
+       and state explicitly in the status that snapshot soundness is a trusted boundary. Of
+       the two, this is weaker.
+   Neither option needs a new proof about S6a, S6b or S6c.
+
+MEDIUM, NOW LARGELY RESOLVED
+M1 Http.Outbound was existential in the request.
+   - In the version I first reviewed, Outbound was PublicReply ∨ ∃ request, GoodReply
+     AuthSound request reply. That allowed a reply certified for a different Authorization
+     header.
+   - The update made after my first pass (Http.lean, timestamp 09:55) indexes Outbound by a
+     credential and requires `request.credential = credential` inside the existential.
+     receive returns `Outbound AuthSound (header request "authorization")` and discharges
+     the equality by `rfl` against the `input` it builds. respond and publicOutbound are
+     generalized over the index.
+   - The new fixture HandlerForeignCredential confirms that an Outbound for "Bearer tenant-2"
+     cannot be used as one for "Bearer tenant-1".
+   - I read the diff. Http.lean is the only implementation file changed since my first pass.
+     The other changes are status files, check.py (the new pin) and the new fixture.
+   This settles the identity part of M1, which is the one that matters for isolation.
+   Residual (Low): the body, accept and content-type of the wrapped request are still
+   existential. A certified reply for a different query from the same credential would type
+   as the same Outbound. Indexing by the whole Protocol.Request that receive constructs would
+   close this fully; it is optional. Header extraction from native LeanIO stays a trusted
+   boundary.
+   This does NOT address B1. Outbound inherits GoodReply's unconstrained snapshot.
+
+LOW (carry into S7/S8 or fix with B1)
+D-L1 Backend exceptions are reported as 503 "Backend unavailable", not 500.
+     - redactTransport maps the exception to TransportFailure.internal, and authenticatedCore
+       then discards the TransportFailure kind and returns Failure.transport.
+     - The status says "unexpected exceptions 500". That is true only for auth, acquire and
+       outer exceptions.
+     Either map `.internal` to Failure.internal or adjust the wording. test_s6_http.py
+     currently pins 503 for backend-throw.
+D-L2 authenticatedCore's `⟨.error _, _⟩ => .variables` branch runs after authentication and
+     acquisition.
+     - It is unreachable, because runPreparedTransport re-runs the same `variables` on
+       ready.supplied that prepareRequest already accepted.
+     - But nothing proves that. If it were reachable it would contradict "variable failure
+       before snapshot".
+     Prove it unreachable from ready.interpreted, for example through
+     variables_complete/injectivity, or eliminate it.
+D-L3 public_failure_independent is `rfl` on a constant function, so it is uninformative. The
+     actual property, that no request or snapshot data reaches public bytes, follows from the
+     signature of publicReply. Either drop it or replace it with a statement about
+     runTenantProgram's failure branches.
+D-L4 runTenantProgram's outer catch uses media .json rather than ready.media. This is cosmetic,
+     since status and bytes are still certified.
+D-L5 The catches cover exceptions of the chosen ε (IO.Error) in m only. Panics,
+     nontermination, async cancellation and anything thrown by LeanIO after respond are
+     outside. The status's trust boundary already says this; no change needed.
+
+TRUST BOUNDARY (accurately stated in s6d-status, apart from B1/M1)
+- Parser and JSON-envelope fidelity: Lean.Json.parse, checkEnvelope, decode, parseOperation.
+  These are tested, not proved.
+- AuthSound for a real identity provider. The demo bearer allowlist is a test policy only.
+- Snapshot acquisition soundness: currently implicit. B1 asks for it to be made explicit.
+- Backend refinement for any non-demo backend (BackendRefines). Only the in-memory
+  adapterBackend is certified.
+- Native runtime, LeanIO, sockets, delivery, termination, liveness and resource bounds.
+- Other routes and methods use LeanIO defaults, outside the certificate.
+
+S6a/S6b CARRY-FORWARD STATUS
+S6a L1 (redaction only on the transport entry): RESOLVED by redaction at three layers.
+S6a L2 (weak foreign-request fixture): RESOLVED by foreign_snapshot_answer_rejected and
+   HandlerForeignSnapshot.
+S6b L2 (transport rejected-without-backend): RESOLVED.
+S6b L4 (shared faults): documented.
+S6b L5 (which entry is deployed): RESOLVED. The core calls the batch transport entry.
+S6b L1 (generic compatibility): recorded in the roadmap for S7/S8.
+
+ACCEPTANCE CHECKLIST (roadmap S6)
+- driveCertified, request-indexed, optimized fault Sat (S6a, S6b): met.
+- Total ordered encoder, independent EncodesOrderedJSON, escaping, numbers, envelopes, root
+  null, UTF-8, AuthorizedWireResponse: met (S6c).
+- Pure prepareRequest with public failures before any snapshot: met.
+- Authenticate per request and capture one snapshot: met in the code, and in the native
+  counts (auth = 1, snapshot = 1).
+- "The authenticated core returns an effectful subtype certifying its wire response for
+  those exact inputs": met (CoreReply).
+- runTenantProgram as prepare, coerce, certified execute, encode, with a branch-by-branch type
+  guarantee: met structurally. The application branch's guarantee is weakened by B1.
+- Route returns only certified application or public-failure bytes: met (Outbound,
+  HandlerRawBody). It is now tied to the caller's Authorization header
+  (HandlerForeignCredential).
+- HTTP tests against the proved in-memory backend, early failures and redaction: met
+  (30/30, legacy 35/35).
+Once B1 is fixed and the status updated, S6 closes with the scope above. P3 stays disabled
+until then.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s6cd-claude-review.txt

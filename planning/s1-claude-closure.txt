@@ -1,0 +1,111 @@
+S1 IMPLEMENTATION CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s1-claude-review.txt (B1, M1-M3, L1-L7), s1-review-resolution.txt,
+s1-status.adoc.
+
+Read:
+- Example/Tenant/WaveExample.lean, all of it.
+- The new parts of S1Proofs.lean, Graph.lean, Rows.lean and PlanSchema.lean.
+- Tests/PlanForwardReference.lean, the diagnostic pins in check.py, and the status scope text.
+
+Ran: python3 scripts/check.py on this tree. Exit 0. Output in .lake/review5/check-closure.out:
+- 184 audit reports: 179 discovered tenant/plan theorems plus 5 existing ones. Only the allowed
+  axioms appear.
+- All 13 expected compile failures pass, each matched by its pinned diagnostic.
+- The semantic tests pass.
+No implementation file or earlier report was edited, and no agents were started.
+
+VERDICT: S1a, S1b, S1c AND S1d ARE CLOSED. NO S1 BLOCKER REMAINS.
+
+FINDING STATUS
+B1 RESOLVED. Output.object accepts any body input, and a comment explains why.
+   WaveExample.wavePlan is a hand-built paired plan with this shape:
+   - The plan issues one Projects call, then computes each project's tasks in an outer region
+     (taskLoadBody).
+   - fromLists, then gather over every parent. One vectorLoad of Task.project, then scatter.
+   - The groups are zipped with the per-position outcomes. The project and task bodies read
+     precomputed values.
+   taskBody contains no call node; it reads row.2. Three rfl theorems equate its rendered response
+   with compile's output:
+   - wave_bubbling: the S0 snapshot, with foreign and missing targets.
+   - wave_success: the consistent snapshot.
+   - wave_multiple_parents: three owned parents, with task widths [2, 0, 2]. The fixture includes
+     an empty parent, the duplicate occurrence "t" (twice in p1, once in p2), a filtered "missing"
+     ID, and distinct targets (t to p1, u to p2).
+   A swapped parent or reordered task would change the response, so the fixture is coordinate-
+   sensitive. That shows the S4b arrangement can be represented without new S1 syntax.
+M1 RESOLVED. node_call_bridge (rfl) and vector_call_bridge relate graph nodes to Call.one and
+   Call.batch over Gathered.materialize, through materialize_map. Call contracts now reach the
+   graph through these bridges.
+M2 RESOLVED. badParentScatter (reversed parent widths) and badKeyOrderScatter (sort, then
+   chunk) are real alternative algorithms, each proved to break reconstruction on [[2,2],[],[1]].
+M3 RESOLVED. s1-status.adoc L24-28 now states what is generic: completion pairing and collection.
+   It states what is tenant-specific: boundaries, failures and the Output constructors. It
+   assigns the generic output plan to S2a/S4.
+L1 RESOLVED. Each plan fixture needs "Type mismatch" plus a distinguishing substring.
+L2 RESOLVED. The forward-reference fixture reads past a nonempty prior context inside a snoc
+   node.
+L3 RESOLVED. map_rows_position added.
+L4 RESOLVED. The status file says one gather over nested lists covers the task wave, and that
+   gatherNested is not claimed to be a graph theorem.
+L5 RESOLVED. framework_error_roundtrip and framework_code_roundtrip added.
+L6, L7 ACCEPTED as recorded. Omitted versus null stays a constructor distinction until S5, and
+   the allowed axiom list is unchanged.
+Audit hardening, verified: theorem names containing a dot or an apostrophe fail closed, and both
+cases are self-tested.
+
+GUARANTEES S1 NOW ESTABLISHES (pure; every finite snapshot and principal)
+- eval_authorized and eval_conforms: the independent S0 reference result is authorized and
+  conforms for every valid P1 operation, with no well-formedness premise.
+- lower_sound, lower_complete and resolved_denotation: P1 surface selections and the clean
+  resolved IR agree with the unchanged S0 evalFields.
+- compile_correct: graph-plus-output denotation equals IR denotation for every typed pure backend,
+  including backends that return errors, and every argument-error choice.
+- planned_response_eq, planned_authorized, planned_conforms and prepare_correct: the composed
+  chain, with concrete success and bubbling responses checked by rfl.
+- Structural laws: gather/scatter, materialize, vectorLoad, mapRows, and the call bridges, with
+  counterexample algorithms.
+- The S0 specification is unchanged, and nothing in S1 redefines it.
+
+RESIDUAL NOTES (not blocking)
+N1. wave_multiple_parents has symmetric widths [2, 0, 2], so a bug that only reverses chunk widths
+    (badParentScatter's pattern) would not change this fixture's response. The response stays
+    coordinate-sensitive for swapped parents and reordered positions, and M2 covers width
+    reversal separately. An asymmetric parent, such as widths [2, 0, 1], would make the witness
+    detect width reversal on its own. This is optional.
+N2. The witness is concrete. It equates two plans on three snapshots with the tenant backend. The
+    statement for every snapshot and backend, and the rewrite algorithm, belong to S4b, as the
+    file says.
+
+LIMITATIONS LEFT TO LATER SLICES
+S2a
+- Carrier types depend on the snapshot (models s uses Occurrence of s), so plans and backends are
+  indexed by one snapshot.
+- External or IO bindings need carriers that are not pure snapshot occurrences. Fix this before
+  BindingsByField freezes.
+- Add the batch-capability slot, with the key function and key-sufficiency law (C1/C2 of
+  s1-grafast-claude-closure.txt).
+- Agreement between SDL and the typed schema.
+S2a/S4
+- A generic output plan, with generic boundary and failure handling. Today Output is tenant-
+  specific, so a second application would re-prove render.
+S3
+- Node and row contracts that supply the owned-row invariant. Today rows are plain Occurrence
+  values, and frame brands are not provenance.
+- Plans not produced by the verified compiler may use arbitrary maps and have no guarantee.
+S4
+- A sequential interpreter refining plan denotation, covering each, gather, scatter, vectorLoad
+  and mapRows through the call bridges.
+- Observable call traces, and fault safety through the generic Sat route.
+S4b
+- Deduplication and chunking, eligibility, key sufficiency, and counting every primitive call
+  against ceil(U/B).
+- Equivalence of the rewrite for every deterministic backend that refines its batch calls.
+S5
+- Omitted versus null, and coercion of variables and optional inputs.
+S6
+- The certified handler and external backends.
+There is still no claim about HTTP, executor, optimizer or performance correctness, and none is
+implied.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s1-claude-closure.txt

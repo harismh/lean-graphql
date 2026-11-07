@@ -1,0 +1,218 @@
+S4 REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s3-claude-closure.txt (S4-1 to S4-5), roadmap "S4 Compose contracts
+through the shipped executor" (L514-597), planning/s4-status.adoc.
+
+Read in full:
+- GraphQL/Plan/Machine.lean, Interpreter.lean, ItemsExample.lean, ListCompletion.lean.
+- Example/Tenant/Execution.lean, FaultContracts.lean, FaultOutput.lean, FaultExecution.lean,
+  FaultShape.lean, SuccessfulExecution.lean, View.lean, S4Proofs.lean, Demo.lean.
+- The convert_outcome_identity / map_models_identity addition in GraphQL/Plan/Conversion.lean.
+- GraphQL.lean imports, lakefile.toml, and the scripts/check.py changes (graphql-tenant run, two
+  new rejection pins).
+- Tests/ExecutionSwallowedFault.lean and Tests/ItemsUnboundedResult.lean.
+Confirmed by timestamp that Authorization.lean (AuthTree, including its .framework rule) has not
+changed since the S3 closure, so the S0 target is unchanged.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s4.out:
+- 386 audit reports: 320 with axioms (propext, Quot.sound, Classical.choice only) plus 66 that
+  use no axioms. No sorryAx and no other axioms.
+- All 23 expected compile failures pass, including ItemsUnboundedResult and
+  ExecutionSwallowedFault.
+- The native graphql-tenant executable runs and passes its built-in regression check.
+- The SDL, semantic and existing tests pass.
+
+Independent probe: .lake/review5/S4Probe.lean (scratch only, not part of the build).
+- sat_run_state: Sat implies the postcondition for a STATEFUL driver, whose answer may depend on a
+  call counter. The proof is a five-line induction.
+- firstTitleFaults: on repeatedRequest (two identical owned project records), this driver faults
+  only the second, equal Project.title call and answers every other call exactly.
+  - #eval of Runtime.execute gives data null and one error at
+    [projects, 1, title], so equal records at different positions get different outcomes.
+  - stateful_fault_authorized proves AuthorizedResponse for that run from
+    Fault.execution_authorized. It uses the allowed axioms only.
+  - The query issues 3 calls (projects, then title twice), which confirms pointwise sequential
+    execution.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S4 MAY CLOSE. THERE ARE NO BLOCKERS AND NO HIGH FINDINGS.
+S4-1 to S4-5 and the roadmap's S4 acceptance are met. Two medium findings (M1, M2) are worth
+fixing cheaply, but neither changes a stated theorem. The low items are wording, fixture and
+export issues.
+
+OBLIGATION STATUS
+S4-1 MET (local fault output evidence, with no EvalSpec equality in the fault route).
+   - FaultOutput builds AuthField and AuthItems witnesses per output constructor:
+     - leaf_evidence covers exact scalars and every framework code;
+     - domain_branch_evidence covers the root project (absent or present), projects, tasks, and
+       taskProject (unavailable or present);
+     - framework_branch_evidence covers every branch with every code;
+     - items_evidence relates each source occurrence to its own child frame, by position through
+       RelatedLists.
+   - The only bridge to the domain is expected_transport, a field-level record transport of
+     Contract.Expected. The fault route never uses EvalSpec, actual_response_eq or
+     render_frame_evidence. I confirmed this by reading every proof in FaultOutput and
+     FaultExecution.
+   - Row positions: renderBranch indexes the frames of branchRows, which are the filtered
+     resolver rows. filtered_error_position shows index 0 for the owned project, which sits at
+     position 1 in the snapshot. repeated_faults_preserve_multiplicity and my probe show that
+     duplicate records keep separate positions and separate outcomes.
+S4-2 MET.
+   - Machine has LawfulMonad: bind_done, bind_assoc and pure_bind by rfl.
+   - Sat is defined exactly as the roadmap schema: it requires each call's precondition and
+     quantifies over every answer that satisfies the postcondition.
+   - Proved Sat rules: sat_weaken, sat_bind, sat_traverse, sat_tabulate, sat_traverse_rows.
+   - interpretGraph and interpretNode are structural, mutually recursive and fuel-free, and
+     implement all ten node forms.
+   - interpreter_denotation holds for every graph and every pure meaning.
+   - graph_contract_execution turns any GraphProof into Sat. It covers every node form: each
+     literal through mapRows case appears, and vectorLoad issues one call per row index with the
+     row's own precondition.
+   - The tenant compiler emits only literal, map, call and each. The gather, scatter, fromLists,
+     vectorLoad and mapRows cases are covered generically, which is what S4 needs; S4b will
+     exercise them.
+S4-3 MET.
+   - Runtime.execute interprets the actual compileFor graph and renders its output plan.
+     Runtime.run runs it with denoteCall over the adapter's meanings, and the graphql-tenant
+     main calls Runtime.run.
+   - run_eq_plan composes interpreter_denotation with run_bind. run_eq_spec then gives
+     EvalSpec for every request, every checked P1 operation and every agreeing adapter.
+     run_authorized and run_conforms follow.
+   - The deterministic route does not go through Sat, as the roadmap asks.
+     deterministic_execution_contract is an extra statement.
+S4-4 MET, for both instances.
+   - Tenant:
+     - Fault.Post is exact success (Contract.tenant.post, which keeps both exactness and
+       ownership) or any declared framework failure.
+     - compiled_fault_contract holds by induction on IR.Resolved over the actual interpreter, for
+       every source occurrence that has OwnedContext.
+       - Tail-frame input projections keep the parent and request (tokenEq, parentEq).
+       - Each child runs with its own occurrence and the captured request.
+       - source_rows_owned derives ownership from the domain rows; it is not assumed.
+       - Injected argument errors (error = some code) are covered, and Clean is not required.
+     - execution_authorized is Sat for Runtime.execute itself, and permitted_driver_authorized
+       is the pure-driver corollary.
+     - fault_execution_conforms adds Conforms through FaultShape.auth_shape, an independent
+       induction over AuthTree. It includes the case where bubbling reaches the root, which
+       gives null data with nonempty errors.
+   - Items:
+     - ItemsExample imports nothing from the tenant.
+     - The length bound reaches the response through plan_certificate,
+       graph_contract_execution and complete_contract, from ResultAllowed. The backend is never
+       evaluated in the proof. permitted_driver_bound holds for any driver satisfying the
+       contract.
+     - limit_faults_permitted and items_fault_bound show that an always-failing driver is
+       covered.
+     - The limit semantics is pinned by default_missing, default_null, negative_rejected and
+       limit_capped. take_backend_contract proves the concrete List.take bound.
+     - Non-null and nullable outer completion are both proved.
+       swallowed_required_fault_rejected shows that a non-null failure cannot be a successful
+       null.
+   - This closes the M1 note from my S3 closure (the bound previously came from computing the
+     backend).
+S4-5 MET.
+   - argument_error_no_call: the argument-error node interprets to Machine.done, by rfl.
+   - The branch is a constructor of Resolved.object handled universally by
+     compiled_fault_contract, so S5 can produce it without reopening the theorem.
+   - Error paths and multiplicity: see S4-1. list_completion_error_order keeps order, paths
+     and multiplicity in all four combinations. nullable_sibling_survives and
+     required_error_stays_error hold.
+   - All four list/nullability combinations: proved in ListCompletion, with weaker reach than
+     the status suggests (see M1).
+
+OTHER REQUESTED CHECKS
+- Generic Sat with variable permitted outcomes. Sat fixes no backend and does not require equal
+  calls to receive equal answers. My stateful probe exercises exactly that: equal calls get
+  different answers, and authorization still follows.
+- Ownership and captures. Child preconditions come from source_owned_record and
+  source_rows_owned. Root IDs stay unrestricted, since Contract.tenant.pre is True at the query
+  root. The captured request is the one carried in the parent frame.
+- Universal error-free success. run_error_free holds for every agreeing adapter, request and
+  checked operation under S0's SuccessConditions, and gives data as an object with no errors.
+  The status correctly says only validity and requiredTargets are used.
+- Pure tenant-view equality. run_tenant_view holds for every checked operation, every snapshot
+  (including duplicates and dangling references) and every agreeing adapter. It goes through
+  record carriers, view_transport and compiled_transport, and relies on no occurrence indices.
+  The status limits the claim correctly: response values only, deterministic route only, and no
+  claim about timing, call traces or caches.
+- Non-vacuity:
+  - title_faults_permitted and fault_response_authorized cover a real faulting backend.
+  - The S3 foreign-call and unguarded-backend refutations still apply to the same contracts.
+  - The two new rejection pins fail as expected.
+- P0, S5, S6 and optimizer claims. P0 text HTTP is stated as legacy and outside the proofs. No
+  cost or batching claim is made, and vectorLoad is pointwise. S5 and S6 are deferred
+  accurately.
+
+FINDINGS
+M1 (Medium) The four-combination completion algebra is not connected to any executed path.
+   - ListCompletion.completeList works on GraphQL.Plan.Completion. Neither executed path uses
+     it:
+     - the tenant render completes through Spec.collect and Spec.completeList, and every tenant
+       list is [T!]!;
+     - ItemsExample.complete returns its List String as one value, with no per-element
+       completion.
+     So the four combinations are proved for a library function, and S4Proofs exercises them
+     only on that function.
+   - list_completion_contract also assumes every row satisfies elementSpec P E false, the
+     non-null element spec. A row that is legitimately (ok none) in a [T]-list is therefore
+     outside the theorem, even though elementsNullable = true should admit it.
+   The roadmap asks to "cover all four list/nullability combinations", and its S4 acceptance
+   names only the tenant and items instances, so this does not block closure. Fix (small): drop
+   the non-null premise, or parameterize it by elementsNullable. Then either route
+   ItemsExample through completeList, or state in the status that the four combinations are a
+   library result that S5 and S8 must instantiate on an executed schema.
+M2 (Medium, S6 preparation) Sat is only specialized to pure drivers.
+   - sat_run needs resolve : (call : C) → A call, so permitted_driver_authorized cannot express a
+     driver with state, retries or per-call variation, although Sat itself already allows them.
+   - My probe's sat_run_state (counter-indexed answers) proves the stateful corollary in five
+     lines.
+   Add a stateful or monadic runner corollary now, for example over any monad with a per-call
+   validity hypothesis. S6's certified handler then does not need to reopen Machine.lean, and
+   the status's statement "does not require repeated calls to receive the same permitted
+   answer" is backed by an exported theorem. This does not block S4.
+L1 (Low) ExecutionSwallowedFault is a spec-level fixture.
+   - It shows that ItemsExample.specification rejects .ok none [] for a non-null field.
+     swallowed_required_fault_rejected already proves this.
+   - No fixture mutates the tenant executor or render itself (for example, rendering a framework
+     failure as null at a non-null field, or numbering error indices from unfiltered rows) and
+     shows that compiled_fault_contract or a pinned rfl breaks.
+   The proofs would break under such a change, so this is a gap in regression evidence, not in
+   soundness. Rename the fixture, or add a render-mutation fixture in the style of S3's
+   unguardedAdapter.
+L2 (Low) ItemsExample is not imported by GraphQL.lean, which imports Interpreter and
+   ListCompletion. It builds only through Example.Tenant.S4Proofs. Export it, or say in the
+   status that it is example code.
+L3 (Low) graphql-tenant runs one fixed typed operation on a fixed snapshot.
+   - That matches P1: static typed operations, with no request intake before S5 and S6.
+   - Nothing in the status overclaims this. Status L7-10 could add "on fixed fixtures" so that
+     "application entry" is not read as a serving endpoint.
+L4 (Low, wording) deterministic_execution_contract uses Binding.application as a vehicle.
+   - It obtains its EvalSpec postcondition by instantiating compiled_frame_invariant and
+     actual_response_eq at Binding.application.
+   - It is sound, because the statement mentions no adapter. A one-line comment would explain
+     why a specific adapter appears in a generic statement.
+NOTE (later slices, not S4)
+   - Fault.Post keeps successful answers exactly equal to Contract.Expected over the snapshot.
+     That is right for S4. For S6, a real external backend needs a refinement relation between
+     the external store and the modeled snapshot before it can claim this postcondition. A
+     postcondition annotation is not evidence, as the roadmap already says.
+   - The view theorem is deterministic only. Faulting drivers may depend on anything, and no
+     claim is made about them; keep it that way.
+   - S4b must replace pointwise vectorLoad with a certified batch and prove the call bound.
+     graph_contract_execution's vectorLoad case will need a .batch Sat case using `compatible`.
+
+WHAT S4 ESTABLISHES
+- One executable entry, Runtime.execute, which graphql-tenant uses (through Runtime.run). It
+  interprets the actual compiled graph through the pure Machine, with no fuel.
+- Deterministic route: for every request, checked P1 operation and agreeing adapter, the
+  response equals EvalSpec and is therefore authorized and conforming. Under SuccessConditions
+  it is error-free, and filtering the snapshot to the caller's tenant leaves it unchanged.
+- Fault route: for every driver whose answers are exact success or declared framework failure,
+  the actual execution's response is AuthorizedResponse and Conforms. The proof uses local
+  per-constructor evidence, explicit occurrence positions and derived ownership, with no
+  EvalSpec equality.
+- A second, tenant-free instance: an items(first:) length bound obtained from the contract
+  through the same interpreter Sat theorem, preserved through completion at the selected path.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s4-claude-review.txt

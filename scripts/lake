@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+prototype_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+prototype_lake="$prototype_root/.tools/lean-4.33.0-darwin_aarch64/bin/lake"
+if [ -x "$prototype_lake" ]; then
+  exec "$prototype_lake" "$@"
+fi
+exec lake "$@"

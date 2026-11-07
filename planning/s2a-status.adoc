@@ -1,0 +1,160 @@
+= S2a: independently anchored schema bindings
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:revdate: 2026-11-05
+:toc:
+
+S2a is complete and reviewed. `planning/s2a-claude-closure.txt` confirms closure
+after the independence fix and an independent full validation run by Claude.
+The initial findings and resolution are in `s2a-claude-review.txt` and
+`s2a-review-resolution.txt`.
+S2a is the next slice in the reviewed roadmap. S2b generation is deliberately after
+S3 and S4; this milestone does not bypass those proof gates.
+
+== Checked schema and canonical identity
+
+`Example/Tenant/Schema.lean` exposes `demoSDL`, its readable `demoAst`, and the explicit
+`indexedSchema` artifact, using the existing S1 tenant field layout. `demo_well_formed`
+and `demo_represents` are checked by Lean's kernel.
+
+`GraphQL/Plan/SchemaEvidence.lean` defines the supported-profile `WellFormedSchema`
+and the independently evaluated, coordinate-by-coordinate `Represents` relation.
+Object and field coordinates follow AST declaration order. The relation checks the
+root, counts, field names, argument type layouts and output types, including named object
+references and nullable/list wrappers. `check_indexed_sound` exposes checked evidence.
+`canonical_field_represents` derives each field's agreement, and coordinate conversion
+has two round-trip laws.
+
+The profile contains object types, String/ID/Int/Boolean scalar arguments, optional
+scalar arguments, multiple arguments represented in source order as products (type layout only;
+untested, see M1), and
+recursive object/list/scalar outputs. It excludes abstract types, custom scalars,
+input objects and input lists. String-only ID input is retained for P1. This is not
+full GraphQL schema validity or runtime argument coercion. The existing P0 demo has
+a larger, separately tested feature profile.
+
+Parser boundary: `parsedDemo` calls the existing parser; `Tests/TenantSDL.lean` checks
+that the result equals the independently checked readable AST. That equality is a
+runtime regression check, not an admitted parsing theorem. The kernel certificates
+start at `demoAst`. A parser/SDL-language faithfulness theorem is not claimed.
+
+== Binding interface and manual artifact
+
+`GraphQL/Plan/Bindings.lean` defines `BindingsByField` at canonical AST coordinates,
+`FieldBinding`, `Adapter`, and `BindingAgreement`. Agreement is equality of the whole
+field binding: implementation, optional batch capability, and the backend-tied key
+and proof. A table of adapter-owned names is not an argument to this judgment.
+
+`Example/Tenant/Bindings.lean` supplies independent application functions, the
+`independentBindings` target, a golden `ResolverRecord`, the application's concrete
+record, and `adapt`. `application_agreement` proves the adapter against that target.
+`root_argument_translation` and `title_adapter` expose designated field equations.
+Scalar same-type swaps are refuted by a concrete unequal ID/title witness.
+The target refers directly to user resolve functions and fixed conversions, not
+the adapter wrapper constants. A swapped wrapper is refuted both by BindingAgreement
+and by the independent S1 semantic equation. BindingAgreement is the dispatch/slot
+check; `binding_agrees_s1` is the semantic anchor. Swapped field names cannot satisfy `Represents`.
+
+There is no new executor: these are the actual typed application bindings for the
+S3/S4 continuation. The legacy P0 HTTP route remains unchanged and is not claimed to
+use the new certified binding path yet.
+
+== Carriers and conversion laws
+
+Binding carriers are now independent of snapshots: Unit, Project and Task records.
+`Request` supplies the current immutable snapshot and principal at execution. No
+principal's records or cached results are captured by a reusable binding/plan. The
+request is the scope boundary; equal keys across different requests do not justify
+reuse, even when their tenants match.
+
+The S1 occurrence carriers remain the independent reference. `BindingBridge.lean`
+proves `binding_agrees_s1` for every snapshot, principal, canonical field, parent
+occurrence and correctly typed argument. Converting reference results to record
+carriers agrees with the new actual adapter, including missing/foreign targets,
+list order, duplicates and public errors. This is a field-semantics bridge, not yet
+a whole runtime-execution theorem or ownership-contract proof (S3/S4).
+
+`Conversion.lean` maps object carriers structurally through wrappers/lists and proves
+identity and successful/error outcome conversion. Application argument record,
+public-error/outcome and omitted/null/value presence conversions have round-trip
+proofs. Presence conversion preserves distinctions; it does not prove S5 coercion.
+The closed public error type has no slot for private exception strings.
+
+== Batch capability and sufficient keys
+
+A field's `BatchCapability` includes n-indexed inputs/results and pointwise exact
+agreement with that exact field's deterministic single backend. `SufficientKey`
+optionally supplies a key, decidable equality and a sufficiency theorem for the same
+backend and request. A plain capability may have no key and cannot thereby justify
+deduplication. `batch_postconditions` derives per-item postconditions from exactness
+and single-call guarantees. Absence of a capability uses pointwise single meaning;
+`answer_binding_exact` proves either path agrees with `Call` denotation.
+
+The application's Task.project key is (tenant, projectId), sufficient within one
+Request (including its snapshot). The actual record/adapter preserves it with the
+capability and canonical field identity. Changing the single backend invalidates
+the capability type; a constant key is refuted by distinct target outcomes.
+
+The manual batch implementation is deliberately a pointwise loop. Its certificate
+establishes semantics, not fewer lookups or physical requests. No reduced-call bound
+is claimed for this implementation or the fallback. S4b must provide and prove the
+actual strategy and count all primitive calls for its transformed load; physical
+backend work remains a separately stated assumption/measurement boundary.
+
+== Validation and evidence measurements
+
+`scripts/check` passes the default build, prototype semantic tests,
+generated-name test, SDL/AST test, 224 discovered tenant/plan theorem audits plus five
+existing audits, the escape-hatch source guard, and 17 expected compile failures.
+The four new rejections cover a same-typed adapter swap, an AST/schema swap, a batch
+capability attached to a different backend, and an insufficient constant key. The
+negative checks pin diagnostic substrings. Default builds now include `S2Proofs`.
+
+`scripts/check --benchmark s2` compiled fresh `WellFormedSchema` and `Represents`
+certificates with kernel evaluation, on Lean 4.33.0/macOS arm64. Each measurement
+runs a fresh process with a 180-second limit. These are single-run whole-process
+elapsed time and peak RSS, including imports/startup, not incremental kernel-only
+memory or runtime query benchmarks. Parsing, generator work and execution are excluded.
+
+[cols="2,1,1",options="header"]
+|===
+|Workload |Seconds |Peak RSS (bytes)
+|Tenant: 3 objects, 8 fields |0.790 |1,349,517,312
+|Mixed profile: 2 objects, 6 fields |0.741 |1,350,762,496
+|Existing scalar shape: 300 objects, 3,000 fields |18.280 |5,574,524,928
+|===
+
+All three passed. Results are in `planning/s2a-benchmark.json`; generated Lean sources
+and logs are under `.lake/s2-benchmark/`. This exercises evidence before generator
+expansion. The large case's memory cost remains a scaling concern, not a production
+performance claim. The scalar workload reuses its ten-field layout for every object;
+all AST coordinates are still checked. No full S2b generator was benchmarked or built.
+
+== Remaining boundaries
+
+S3 must add and prove resolver/node/row contracts and their implication to independent
+response authorization. Snapshot-independent records can be forged; a record type is
+not ownership evidence. S4 must prove the shipped interpreter and generic output
+path. S2b then generates this exercised binding interface and certificates. S4b adds
+the verified optimizer and cost theorem. Full parser correctness, IO refinement,
+HTTP, generic scalar coercion and performance are not established by S2a.
+
+== Review findings and subsequent gates
+
+The review accepted every S2a acceptance item. M2 (shared wrapper constants in the
+agreement target) is fixed, with wrapper-level counterexamples; L1's unused-metadata
+theorem is removed. See `s2a-review-resolution.txt`.
+
+H1 is an explicit S3 entry condition, not completed work: make the compiler/output
+path parametric in carriers and scope, then prove whole-plan transport to the actual
+Request/record bindings. S2a's field-level bridge is not that theorem. This route is
+recorded in the roadmap before S3's contract definitions.
+
+M1 remains a pre-S2b requirement. Current argument encoding checks type/product order,
+not argument names or record projections for arbitrary multi-argument fields. The
+tenant has only one argument. Add argument layout metadata, AST-coordinate projection
+certificates and a two-same-type-argument swap rejection before generating adapters.
+Broaden and repeat benchmark runs and investigate per-object evidence at that time.
+
+S6 requires a separate effectful certified batch interface with safety postconditions;
+it must not weaken the exact deterministic capability used by S3/S4/S4b.

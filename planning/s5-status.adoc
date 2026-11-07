@@ -1,0 +1,109 @@
+= S5: checked inputs and prepared execution
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+
+Status: CLOSED. Claude independently confirmed closure with no remaining blockers
+in link:s5-claude-closure.txt[S5 closure review].
+
+== Scope
+
+P2 extends the tenant P1 schema with decoded operation variables and scalar input
+coercion. It supports ID, String, Int and Boolean coercion; the tenant schema's only
+argument location is Query.project(id: ID!). A separate executable join(left:
+String!, right: String!) example exercises canonical named records with equal host
+types. This remains a tenant-schema slice, not arbitrary schema validation.
+
+Excluded: aliases, repeated fields, directives, fragments, enums, abstract types,
+input lists/objects, recursive inputs, introspection, mutation and subscription.
+Decoded limits are 32 variable declarations, 256 selection nodes and depth 32.
+Text entry additionally limits 32768 characters and inherits the existing parser's
+fuel limits. Completeness is for decoded ASTs; no parser fidelity or text
+completeness theorem is claimed. SDL field-default parsing is not extended:
+field-default semantics are proved by the generic argument coercer and examples.
+
+== Proof chain
+
+* `InputCoercion.Meaning`, `DefaultMeaning`, `VariablesMeaning`, and
+  `VariablesRejected` specify typed values and ordered failures independently of
+  the executable coercers. Soundness/completeness connect these relations to code.
+  Int values have a signed 32-bit bound; ID integers normalize to strings.
+* `InputSurface.ValidOperation`, `InProfile`, and `WithinLimits` are independently
+  inspectable predicates. `prepare_complete` accepts every valid, in-profile,
+  bounded decoded AST. `Prepared` contains validity and a checked template.
+  Declared types remain an explicit list of `Option ScalarType` values (unsupported
+  types remain `none`); the profile requires agreement with the interpreter's scalar
+  types, rather than trusting a decoder-set Boolean. `InputScope.argument_location`,
+  `no_query_child`, and `at_most_one_argument` prove why the specialized tenant
+  lookup covers every argument location. They do not generalize to schemas with
+  additional arguments or argument defaults.
+* `instantiate` specializes the template to the coerced key or a field-argument
+  failure node. `instantiated_denotation` and `parameter_denotation` connect this
+  to S0's independent evaluator extended by input interpretation.
+* `plan_denotes`, `input_meaning_preserved`, and `execution_cases` connect every
+  variable input to the actual S4 interpreter/S4b dispatcher, or to an independently
+  specified request failure with no calls. Parameter interpretation is not a copy
+  of the compiler: the target uses S0 domain meanings and completion.
+* Variable defaults apply only on absence. Explicit null survives variable
+  coercion and can cause a field argument error for a nullable ID declaration with
+  a non-null default at the required ID location. Argument errors compile to
+  error nodes without invoking the failed resolver.
+* `namedFieldBinding` is a reusable library binding builder. It obtains its record
+  layout from the checked AST coordinate; `arguments_encoding_code` proves the
+  positional encoding used by `checkedArguments`. `NamedBoundary.binding_agreement`
+  checks an independently named `BindingsByField` target against the adapter.
+  `NamedBoundary.execution_meaning` runs a graph `.call` through `interpretGraph`
+  and `answerBinding`, from independent named scalar meanings to the application
+  specification. Positive disagreement theorems and compile-rejection tests reject
+  swapped adapter packing and swapped coercion lookups despite identical host types.
+  The older `NamedExample` remains a lower-level example and coercion implementation;
+  it is not the evidence for closing the adapter-boundary obligation. The builder
+  is exported by `GraphQL`; migration of every generated positional resolver API
+  is not claimed. Named coercion assumes separately validated argument layouts.
+* `resolved_authorized` supplies fault-contract Sat for instantiated resolved IR.
+  `key_authorized` and `key_conforms` transfer deterministic dispatcher results
+  under the stated driver contract. They do not prove optimized fault-machine Sat;
+  that S4b obligation remains S6.
+
+== Executable path and validation
+
+`prepareText` decodes through the existing parser and checks the independent AST
+predicates. `executeOperation` checks a decoded AST, interprets variable values,
+instantiates the checked template, and executes the actual core. `jsonVariables`
+preserves absent versus explicit null and rejects unsupported scalar shapes through
+coercion. The native tenant demo runs text/variable/error/batch cases on this path.
+
+The application binding agreement and independent snapshot model remain theorem
+premises. Parsing/JSON decoding fidelity, HTTP, physical batching, and asynchronous
+backend behavior remain outside S5. The legacy P0 HTTP server is not certified.
+
+Validation command: `scripts/check`. This includes generated binding
+checks, native tests, public theorem proof-dependency audit, and compile-rejection
+fixtures. S5 adds rejection fixtures for a mutated null-default function,
+same-typed adapter packing, swapped coercion lookups, and an undeclared variable.
+`null_default_mutation_rejected` is a positive witness against the unchanged
+independent DefaultMeaning relation.
+
+Variable rejection reports the first failure in declaration order, a deterministic
+library policy rather than a claimed GraphQL requirement. JSON numeric interpretation
+uses Lean.Json.getInt?; whether a representation such as `1.0` decodes as an Int is
+outside the decoding-fidelity theorem. The absent-key placeholder is never observed
+in valid tenant operations without root project; S0 requires id when project occurs.
+
+Final implementation validation: 593 proof-audit reports and 35 compile-rejection
+tests passed, including the review fixes and native graph/adapter execution.
+The native S4b benchmark still measures 12 reference versus 9 optimized total
+Machine calls at capacity 2. No physical-backend performance claim is added.
+
+== Review response
+
+The first review (`s5-claude-review.txt`) correctly identified that the original
+named example bypassed the FieldBinding boundary. This is now addressed by
+`NamedBindings` and `NamedBoundary` above (B1), not deferred. M1 is addressed by
+InputScope; M2 by retained optional declared types and profile agreement. L1 has
+an independent defaulting mutation witness; L2 is documented at idKey; L3's policy
+and decoder limits are stated here. Claude independently verified all fixes and closed S5 with no remaining blockers.
+
+The remaining extension is a generic named coercer over arbitrary checked layouts
+and migration of generated positional bindings when multi-argument generated schemas
+are introduced (S7/S8). The current coercer example is specific to join's two names;
+the named binding builder itself is reusable. See closure note N1.

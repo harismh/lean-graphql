@@ -1,0 +1,103 @@
+S2a CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s2a-claude-review.txt (H1, M1, M2, L1-L4), s2a-review-resolution.txt,
+s2a-status.adoc, and the new roadmap section "S3 entry gate from the S2a review" (L446-462).
+
+Read:
+- Example/Tenant/Bindings.lean: independentBindings and application_agreement.
+- Example/Tenant/S2Proofs.lean: swappedIdWrapper, wrapperSwapped, and the two new theorems.
+- The status and roadmap text listed above.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s2a-closure.out:
+- 229 audit reports: 224 discovered theorems plus 5 existing. Only the allowed axioms appear.
+- All 17 expected compile failures pass.
+- The SDL and semantic tests pass.
+No implementation file was edited, and no agents were started.
+
+VERDICT: S2a IS CLOSED.
+Every S2a acceptance item was met at review. M2 and L1 are now fixed. H1, M1, L2 and L3 are
+recorded accurately as gates for later slices, and nothing claims they are done.
+
+FINDING STATUS
+M2 RESOLVED. independentBindings now names the user's resolve* functions and the fixed
+   conversions (toOutcome, the ProjectArgs constructor) at each AST coordinate. No
+   project*Binding or task*Binding wrapper constant is shared with `application`.
+   application_agreement still holds, by rfl or by case analysis.
+   wrapperSwapped puts resolveProjectTitle in the Project.id wrapper. It is rejected twice:
+   - by the dispatch check: swapped_wrapper_rejected, ¬ BindingAgreement;
+   - by the semantic anchor: swapped_wrapper_breaks_semantic_anchor, at Checks.ownedOccurrence,
+     whose id ("shared") and title ("public") differ.
+   That is the counterexample the review asked for.
+   One constant is still shared: taskProjectBatch, with its key, appears in both the target and
+   the record. This is harmless. Its type is indexed by the Task.project single function, which
+   unfolds to the target's own resolveTaskProject expression. `exact` fixes its results to that
+   function, and `sufficient` fixes what its key may justify. Its data cannot diverge from the
+   independent target without a proof failing. Keep it that way in S2b: the capability may be
+   user-supplied, but it must stay indexed by the independently stated single function.
+L1 RESOLVED. The unused-metadata theorem is removed.
+H1 RECORDED AS AN S3 ENTRY GATE (roadmap L446-455; status L143-146). Route (a), the parametric
+   compiler, is chosen. The required endpoint is stated precisely: for every request and valid
+   P1 operation, the response of the plan over actual bindings equals EvalSpec. The roadmap
+   states that a field-level bridge does not discharge it. Not implemented, and not claimed.
+M1 RECORDED AS AN S2b GATE (roadmap L457-459; status L148-152). It requires:
+   - argument names or layouts;
+   - certificates that argument projections match AST coordinates;
+   - a fixture showing a swap of two same-typed arguments is rejected.
+   Translation is correctly limited to the tenant's one-argument record. One remaining wording
+   point: status L24-25 still lists "multiple arguments represented in source order as
+   products". That is true of type layouts but unexercised by any test. Add "(type layout only;
+   untested, see M1)" there. This is optional.
+L2 RECORDED. Before choosing a generator strategy: repeated runs, object references, multiple
+   arguments, and per-object certificates.
+L3 RECORDED. S6 gets a separate effectful certified batch interface, and BatchCapability.exact
+   is not weakened.
+L4 UNCHANGED, as intended. The parser stays a tested boundary, and the kernel certificates start
+   at demoAst.
+
+WHAT S2a ESTABLISHES
+- Canonical field identity at AST coordinates, with kernel-checked WellFormedSchema and
+  Represents for the tenant schema. A same-typed field swap in the artifact is rejected.
+- BindingsByField with an optional exact batch capability and an optional sufficient key. Both
+  are indexed by that field's single backend and preserved by the actual adapter.
+- An agreement target independent of the wrapper code, with record-level and wrapper-level swap
+  counterexamples.
+- binding_agrees_s1: the actual adapter agrees with S1 occurrence semantics, through record
+  transport, for every snapshot, principal, field, occurrence parent and argument.
+- Conversion laws for outcomes, public errors, argument records and presence. Exactness is kept
+  separate from cost, with no reduced-call claim.
+
+OUTSTANDING CONDITIONS, PRECISELY
+
+S3 entry (must hold before S3 contract definitions are fixed):
+E1. Make compile, Output, render and branch row extraction parametric in carriers, the scope
+    token and field meanings. compile_correct must still hold for every backend.
+E2. Prove a transport theorem that lifts binding_agrees_s1 from fields to whole plans.
+E3. Prove the endpoint theorem: for every Request ⟨s, p⟩ and every checked valid P1 operation,
+    the response of the plan over the actual record bindings and Request equals
+    EvalSpec (tenantMeanings s p) selection, and therefore AuthorizedResponse and Conforms.
+E4. State S3 contracts over the parametric carrier and scope interface. They must quantify over
+    any adapter satisfying BindingAgreement and the semantic bridge, not over occurrence
+    carriers.
+
+S2b entry (must hold before any adapter or record generation):
+G1. Argument names or layouts in the checked schema evidence. FieldRepresents compares them.
+G2. Argument projection agreement: the generated argument record's component for AST argument k
+    equals component k of the encoded product. A fixture must show a swap of two same-typed
+    arguments is rejected.
+G3. The user's resolve* functions, independentBindings and the semantic anchor (binding_agrees_s1
+    or its parametric successor from E2) stay outside generator output. Generated code may only
+    satisfy them.
+G4. Repeated, broader evidence benchmarks (object references, multiple arguments, per-object
+    certificates), with time and RSS recorded before a generator strategy is chosen.
+G5. Any generated batch capability stays indexed by the independently stated single function,
+    with `exact` and an optional `sufficient` key proof.
+
+Later slices (unchanged by this closure):
+- S3: ownership through node and row contracts, since records are forgeable.
+- S4: the interpreter over answerBinding, plus a generic output path.
+- S4b: a real batch strategy, with every primitive call counted against ceil(U/B).
+- S5: coercion between omitted, null and value.
+- S6: the effectful certified batch interface, and the handler.
+- Parser faithfulness remains outside the proof.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s2a-claude-closure.txt

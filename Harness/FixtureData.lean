@@ -1,0 +1,57 @@
+namespace Harness.FixtureData
+
+def rejections : List (String × List String) := [
+  ("WireRawControl", ["proved that the proposition", "is false"]),
+  ("WireDroppedErrors", ["type mismatch", "ResponseMeaning"]),
+  ("HandlerWrongPrincipal", ["unsolved goals", "False"]),
+  ("HandlerForeignSnapshot", ["Tactic `rfl` failed", "Contract.Expected"]),
+  ("HandlerForeignCredential", ["Type mismatch", "Bearer tenant-2", "Bearer tenant-1"]),
+  ("HandlerUnacquiredSnapshot", ["proved that the proposition", "is false"]),
+  ("HandlerRawBody", ["type mismatch", "Http.Outbound"]),
+  ("BatchFaultUnkeyedReuse", ["Type mismatch"]),
+  ("BatchFaultFalsePreparation", ["Tactic `rfl` failed"]),
+  ("BatchFaultWrongPaths", ["proved that the proposition", "is false"]),
+  ("DriverUnprovedAnswer", ["proved that the proposition", "is false"]),
+  ("DriverForeignRequest", ["Type mismatch"]),
+  ("DriverTransportAsBatch", ["Type mismatch"]),
+  ("InputDefaultNull", ["Type mismatch"]),
+  ("InputNamedCoercionSwap", ["Type mismatch"]),
+  ("InputNamedExecutionSwap", ["Tactic `rfl` failed"]),
+  ("InputInvalidPrepared", ["proved that the proposition", "is false"]),
+  ("BatchWrongWave", ["Tactic `rfl` failed"]),
+  ("BatchWrongScatter", ["Tactic `rfl` failed"]),
+  ("BatchCrossScope", ["Tactic `rfl` failed"]),
+  ("BatchZeroCapacity", ["proved that the proposition", "is false"]),
+  ("BatchMissingCapability", ["type mismatch"]),
+  ("ArgumentLayoutSwap", ["proved that the proposition", "is false"]),
+  ("ArgumentProjectionSwap", ["Tactic `rfl` failed"]),
+  ("ArgumentAccessorSwap", ["type mismatch"]),
+  ("ItemsUnboundedResult", ["proved that the proposition", "is false"]),
+  ("SpecSwallowedFault", ["Tactic `rfl` failed"]),
+  ("ContractRemovedGuard", ["proved that the proposition", "tenant", "is false"]),
+  ("ContractWrongProjection", ["Tactic `rfl` failed"]),
+  ("ContractPrivateFailure", ["type mismatch", "ApplicationError"]),
+  ("ContractUnprovedMap", ["proved that the proposition", "is false"]),
+  ("MissingResolver", ["Fields missing"]),
+  ("WrongResolver", ["Type mismatch"]),
+  ("WrongUnion", ["Unknown constant"]),
+  ("WrongReference", ["Type mismatch"]),
+  ("InvalidSchema", ["invalid schema"]),
+  ("PrivatePlan", ["Unknown constant"]),
+  ("PlanWrongSchema", ["Type mismatch", "FieldId otherSchema"]),
+  ("PlanWrongParent", ["Type mismatch", "Ref [String, Principal, String]"]),
+  ("PlanWrongResult", ["Type mismatch", "[Unit, Principal, String] Nat"]),
+  ("PlanForwardReference", ["Type mismatch", "Ref [] String"]),
+  ("PlanCycle", ["Type mismatch", "Graph.snoc wrong"]),
+  ("PlanWrongBatchLength", ["Type mismatch", "Answer ApplicationError request"]),
+  ("PlanWrongOutputGraph", ["Type mismatch", "OutputRef secondGraph String"]),
+  ("BindingSwappedAdapter", ["Type mismatch", "adapt swapped"]),
+  ("BindingSwappedSchema", ["proved that the proposition", "Represents demoAst wrongSchema", "is false"]),
+  ("BindingWrongBackend", ["type mismatch", "some taskProjectBatch"]),
+  ("BindingInsufficientKey", ["Tactic `rfl` failed", "taskProjectSingle"])]
+
+def mutationWitness := "\ntheorem mutation_disagrees : ¬ BindingAgreement Binding.independentBindings (adapter application) := by\n  intro agreement\n  have wrong := adapter_single_agreement Binding.independentBindings (adapter application) agreement\n    1 ⟨0, by decide⟩ S2Proofs.request Checks.ownedProject ()\n  change (Except.ok \"public\" : Outcome ApplicationError String) = .ok \"shared\" at wrong\n  exact (by decide : (\"public\" : String) ≠ \"shared\") (Except.ok.inj wrong)\n#print axioms mutation_disagrees\n"
+
+def generatorFixture := "\nexample : GeneratorFixture.Args_1_0.arg_0_left.read\n    (GeneratorFixture.Args_1_0.pack (\"left\", \"right\", .omitted)) = \"left\" := rfl\nexample : GeneratorFixture.Args_1_0.arg_1_right.read\n    (GeneratorFixture.Args_1_0.pack (\"left\", \"right\", .null)) = \"right\" := rfl\nexample : GeneratorFixture.Args_1_0.arg_2_limit.read\n    (GeneratorFixture.Args_1_0.pack (\"left\", \"right\", .value (7 : Int))) = .value (7 : Int) := rfl\nexample : GeneratorFixture.Args_1_0.pack (\"left\", \"right\", .omitted) ≠\n    GeneratorFixture.Args_1_0.pack (\"left\", \"right\", .null) := by\n  intro equal\n  have wrong := congrFun equal ⟨2, by decide⟩\n  contradiction\n"
+
+end Harness.FixtureData

@@ -1,0 +1,162 @@
+= S4: the typed execution path and fault-safe programs
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:toc:
+
+== Status
+
+S4 is complete and independently reviewed. Claude confirmed closure after rerunning
+all checks: link:s4-claude-closure.txt[closure review]. All medium and low findings
+from link:s4-claude-review.txt[the first review] are addressed. The default build now
+includes the P1 `graphql-tenant` executable and S4 proof aggregate. The application
+entry is `Example.Tenant.Runtime.execute`; its deterministic driver is `Runtime.run`.
+Both execute the actual compiled graph through the existing `Machine` suspension
+interface and then reconstruct its output. The executable calls this same entry on fixed operation/snapshot fixtures; it is not
+a request-serving endpoint.
+
+This is the reviewed narrow P1 typed-operation route. The legacy P0 text-query HTTP
+server remains a separate prototype; its parser, fuel-based executor and effect driver
+are not covered by these proofs. Text/variable coercion is S5 and certified external
+handlers are S6. No batching optimizer or runtime performance improvement is claimed.
+
+== Machine and graph interpreter
+
+`GraphQL/Plan/Machine.lean` proves `LawfulMonad` for the existing Machine, defines Sat
+by recursion on suspension trees, and proves weakening, bind, list traversal and
+dependent finite traversal rules. Sat requires each pending call's precondition and
+quantifies over every answer satisfying its postcondition. It does not fix a backend
+or require repeated calls to receive the same permitted answer. `sat_run` specializes
+the guarantee to a pure driver satisfying the call contract. `runStateMachine` and
+`sat_run_state` export the corresponding theorem for a pure stateful driver whose
+answers can vary for each occurrence of an equal call. A regression gives two equal
+project rows different outcomes and proves the resulting response authorized.
+
+`GraphQL/Plan/Interpreter.lean` implements every graph constructor. It is structurally
+recursive and uses no fuel. Regions execute sequentially; captures retain their values,
+and gathered rows are traversed by their original parent/position coordinates.
+`vectorLoad` currently issues pointwise single calls, so no batch compatibility or cost
+claim is hidden in this interpreter. All output bindings remain graph-indexed.
+
+`interpreter_denotation` proves exact agreement for every graph and every pure meaning.
+`graph_contract_execution` proves Sat from the generic GraphProof/NodeProof certificates,
+covering literals, maps, pairs, calls, gather, scatter, fromLists, vectorLoad, each and
+mapRows. No node form is omitted from either theorem.
+
+The compiler's existing sequential order evaluates the tail graph before its head
+field. These are query programs; response field/error ordering follows reconstruction,
+not call scheduling. Serial mutation execution is outside P1.
+
+== Deterministic application route
+
+`Execution.lean` proves the application's executable entry equals its plan denotation
+and then S0 EvalSpec, for every request, checked P1 operation and independently agreeing
+adapter. Authorization and independent response conformance follow. The S3 compiled
+certificate also produces a Sat theorem for exact deterministic outcomes.
+
+`SuccessfulExecution.lean` proves error-free success under the existing S0
+SuccessConditions. The proof actually needs only validity and owned tasks having owned
+required targets; uniqueness and root-presence conditions are stronger than necessary.
+No such conditions are premises of the universal safety/equality theorems.
+
+`argument_error_no_call` identifies the actual interpreter result for the compiler's
+argument-error node as Machine.done. This node issues no resolver call; unrelated
+sibling execution is not claimed to disappear.
+
+== Fault route and local output evidence
+
+`FaultContracts.lean` permits exact domain outcomes or a closed declared framework
+failure. A successful result must still have the exact domain rows and ownership.
+Root input IDs remain unrestricted; child parents must be owned.
+
+`FaultOutput.lean` builds evidence locally for scalar, absent, object, list, unavailable
+and framework-failure cases. It uses actual child frames, not equality to EvalSpec.
+`items_evidence` relates each occurrence to its frame in order, allowing two equal
+records or repeated occurrences to have different fault outcomes. Error paths use
+filtered output indices. S0 AuthTree/AuthorizedResponse are unchanged.
+
+`FaultExecution.lean` proves `compiled_fault_contract` by induction over every resolved
+operation and the actual interpreter. Tail-frame input projections preserve parent
+and request references. Each branch provides owned occurrence rows, and each child
+executes with its own source witness and the captured request. The local output lemmas
+construct the authorization tree and prove erasure equals actual reconstruction.
+This includes injected argument errors; it does not require Clean.
+
+`execution_authorized` concludes Sat for the actual Runtime.execute entry, and
+`permitted_driver_authorized` supplies the pure-driver corollary. These statements
+cover declared argument, internal and exhaustion errors without treating faults as
+ordinary nulls or claiming faulting execution equals EvalSpec.
+
+`FaultShape.lean` independently proves that an authorization witness has a conforming
+response shape, including nonempty error evidence when bubbling reaches the root.
+It lifts this to fault-safe execution conformance.
+
+== Independent list-bound application
+
+`GraphQL/Plan/ItemsExample.lean` is standalone example code (built by the S4 aggregate,
+not exported by the GraphQL umbrella module) and has no tenant imports. Its schema is
+`items(first: Int): [String!]!`, with typed omitted/null/value arguments. Omitted and
+null default to 20, negatives return BadLimit, and nonnegative values cap at 100.
+The concrete backend uses List.take; `take_backend_contract` proves its bound.
+
+`execution_contract` composes the graph certificate, generic interpreter Sat theorem,
+and completion contract. The length guarantee comes from the permitted answer's
+postcondition, not evaluation of the backend. Framework failures are allowed; the
+chosen field path is retained on every error. Successful items execute through the
+shared `completeList false false` function, with a proved success simplification.
+Both non-null and nullable outer
+completion are proved, and non-null failure cannot become successful null.
+
+`GraphQL/Plan/ListCompletion.lean` separately proves the reusable completion algebra
+for all four list/element nullability combinations. It preserves error order, paths
+and multiplicity exactly, retains nullable siblings, and proves a list-length and
+element-property contract after completion, including legitimate successful null
+elements when elements are nullable. S4Proofs exercises all four combinations and a
+successful null element. The currently executed schemas use non-null list elements;
+the other combinations are library results for later expanded schemas, not a claim
+that the P1 demo serves every GraphQL list type.
+
+== Modeled tenant-view equality
+
+`View.lean` proves filtering the snapshot to the requesting tenant does not change
+owned lookup, listing or traversal outcomes. It lifts field equality through the
+parametric compiler and actual Runtime.run:
+
+[source,text]
+----
+run adapter (tenantView request) operation = run adapter request operation
+----
+
+The theorem covers every checked P1 operation, arbitrary snapshots including duplicate
+IDs and dangling references, and every agreeing adapter. It includes response errors
+and ordering. Stable record carriers plus the existing occurrence transport avoid
+assuming that a filtered snapshot retains old occurrence indices. This is modeled
+response noninterference only: no timing, call-trace, external-service, scheduling or
+shared-cache noninterference claim is made.
+
+== Validation
+
+`scripts/check` passed: 391 discovered public proof audits plus 5 existing
+(396 total), semantic and SDL tests, the native P1 executable, and 23 expected compile
+rejections. Only the standard allowed axioms were reported. The source guard rejects
+proof escape hatches. The executable checks its actual native response against the
+known specification fixture before printing deterministic and faulting examples.
+
+Regressions cover filtered error indices, repeated-row error multiplicity, a permitted
+fault driver, items limits/negative arguments, all four nullability combinations,
+unbounded result rejection and rejection of a swallowed non-null error.
+`mutated_renderer_rejected` additionally executes a changed final reconstruction that
+drops errors and proves its actual output nonconforming. The spec-only compile fixture
+is named SpecSwallowedFault to distinguish it from this execution mutation. Existing
+schema, graph, adapter, ownership and scalar-projection rejection tests still pass.
+
+== Remaining scope
+
+Next, S2b must satisfy its argument-layout gate and generate the proved binding shape.
+S4b depends on S2b and must implement an actual batching transformation with explicit
+backend work bounds. S5 expands
+coercion and text entry. S6 must supply certified effect handlers; IO implementation,
+network behavior and resource scheduling are not established by the pure driver.
+S6 must lift the exported stateful theorem to an effectful runner and prove external
+store/snapshot refinement; a contract annotation is not such evidence. Expanded
+schemas must instantiate the remaining list-nullability combinations on actual
+executed fields (S8 or earlier).

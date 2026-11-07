@@ -1,0 +1,126 @@
+= S3: contracts for graph programs and response evidence
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:toc:
+
+== Status
+
+S3 is complete and independently reviewed. Claude confirmed closure in
+link:s3-claude-closure.txt[the closure review] after rerunning all checks. This slice closes the
+S2a H1 compiler entry gate and supplies S3's contract and output-bridge interfaces.
+S4 must connect these certificates to the shipped suspended executor. No HTTP,
+external-I/O safety, optimization, call-count or latency theorem is claimed here.
+
+== Compiler entry gate
+
+`OutputFor`, `compileFor`, and `operationDenotes` now share one implementation
+parameterized by carriers and scope. The occurrence-based APIs remain aliases.
+`compile_for_correct` covers every resolved selection and arbitrary typed meanings.
+`PlanTransport.lean` proves conversion for leaves, branch rows, rendering, resolved
+selections and compiled operations. `ExecutionBridge.lean` proves, for every Request
+and valid P1 operation, that any adapter with `BindingAgreement independentBindings`
+produces `EvalSpec` through the actual record-carrier compiled plan. Authorization
+and conformance follow from the unchanged S0 theorems. There is no fixture-only
+restriction or assumed final response equality.
+
+== Generic contracts
+
+`GraphQL/Plan/Specifications.lean` defines syntax-directed `GraphProof`/`NodeProof`.
+Every reachable call requires its business precondition; every transformation has
+an explicit closure obligation. The soundness theorem covers all graph constructors:
+literal, map, pair, call, gather, scatter, fromLists, vectorLoad, each and mapRows.
+Regions prove their body contracts with actual captured values and row identities;
+list relations preserve order/cardinality and gathered relations preserve coordinates.
+`CompiledContract.lean` constructs a certificate for every resolved tenant selection,
+by induction over the actual compiler. `branch_rows_owned` supplies every child
+precondition. `compiled_frame_invariant` composes this with every agreeing adapter.
+The exact-frame invariant fixes all references, nested frames, row positions and
+captured requests to the independently specified domain computation; no final
+response property is assumed. Identity-region certificates additionally exercise
+capture and coordinate preservation.
+
+`BackendSatisfies` quantifies over all typed calls with valid preconditions. The
+current vectorLoad denotation is pointwise deterministic execution; its theorem does
+not claim an effectful batch implementation or invoke a physical batching capability.
+`Contracts.compatible` remains part of the separate batch-call contract interface.
+A future driver must discharge that interface before executing such a batch call.
+
+`ResultSpec.lean` supplies explicit value/error predicates and preservation laws for
+leaf, failure, map, nullable boundary, pair and list completion. A successful list
+can satisfy a whole-list cardinality bound as well as elementwise properties.
+A bubbling result requires a nonempty error list. Users choose the predicates and
+prove closure; a type-correct arbitrary map cannot inherit a guarantee.
+
+== Tenant contracts
+
+`Example/Tenant/Contracts.lean` fixes independent domain equations in `Expected`,
+without referencing the application resolver record. `OutputInvariant` recursively
+establishes membership and tenant ownership of every returned object. Postconditions
+require both exact domain behavior and ownership/public-failure evidence. They cover
+all eight fields, exact scalar projections, first owned lookup, ordered/duplicate
+preserving traversals, and unavailable target failures.
+
+Root preconditions are True: user IDs need not already be owned. Child calls require
+an owned parent; this is a program obligation, not an inference from record typing.
+The current concrete resolvers satisfy their postconditions even without that premise.
+`tenantResolvers_satisfy_contracts` lifts the proof to every agreeing adapter.
+`manual_contract_bundle` applies it to the actual application record. The concrete
+`titleGraph` has a `GraphProof` certificate and exact-title theorem using this bundle
+for every agreeing adapter, with an explicit owned-parent precondition.
+
+== Response judgment and independent bridge
+
+`GraphQL/Plan/Judgment.lean` is a tenant-free local-rule derivation and parameterized
+response judgment. Every declared child premise requires its own derivation.
+`ResponseContract.lean` instantiates local rules with exact occurrence, selection,
+path, public failure and row-order obligations. It does not use AuthTree as a premise
+in those rules. `rules_preserve` and `response_authorized` prove implication to S0's
+unchanged independent AuthTree and AuthorizedResponse. `OutputEvidence.lean` now discharges a render-granularity obligation for clean,
+deterministic compiled frames. `render_frame_evidence` takes `ExactFrame`, an explicit
+source occurrence (`RowFor`), and its ownership, and produces a local rule derivation
+whose erasure equals the actual render. `branch_rows_correspond` relates each ordered
+record row to its corresponding occurrence; it never recovers occurrences by record
+equality. Duplicate equal records retain their positional witnesses. This pure proof
+uses the established transport/evaluation route. `OutputBridge` remains only the final
+corollary shape. S4 must connect its executor to these frames and extend the render
+evidence construction to permitted framework faults. A framework-exhaustion example exercises an
+allowed fault that the deterministic resolver equation does not permit.
+
+`GraphQL/Plan/BoundedExample.lean` supplies a separate schema, backend, call graph,
+contract bundle, completion proof and local response-rule instance. It proves total
+list length bounded by the request scope and demonstrates that all elements being
+valid does not imply this bound. `program_completion_response` connects the actual graph output to both completion
+and the response judgment in one theorem. A tenant scalar postcondition also feeds
+`title_completion_contract`. The bounded instance imports no tenant modules.
+
+== Validation
+
+`scripts/check` builds the S3 aggregate by default, runs existing semantic
+and SDL tests, discovers/audits all public tenant and plan theorems, and checks 21
+expected compilation failures. The final run passed 297 discovered theorem audits plus
+5 existing audits (302 total). New mutation checks reject removal of ownership
+filtering, a wrong scalar projection, private failure text and an unproved map. The ownership fixture specifically refutes the ownership conjunct.
+`unguarded_backend_rejected` refutes an actual adapter with the tenant filter removed;
+`foreign_call_uncertifiable` refutes a call certificate under an unrestricted parent
+precondition.
+Positive theorems also refute a foreign parent precondition and an unexpected public
+error for the concrete deterministic contract. Standard kernel axioms only are allowed;
+no proof escape hatches are accepted by the source guard.
+
+== Next slice
+
+S4 proves the shipped Machine and graph/output interpreters implement the denotation,
+and composes the generic contract evidence through continuations and output completion.
+Its fault-permitting contracts must have the form exact successful domain behavior
+or a declared framework failure, keeping exact rows on success; the public response
+rules already allow declared framework failures.
+The deterministic render proof uses exact-frame transport and proved S0 consistency.
+For fault frames S4 must instead prove local constructor rules or a failure-replacement
+lemma; it cannot assume EvalSpec equality for faulting runs. The independent list-bound
+instance must obtain its bound through the contract certificate, rather than computing
+the concrete backend. The full S4-1 through S4-5 obligations are recorded in the closure
+review and roadmap.
+
+S4b then supplies a real response-preserving batching transformation and backend cost
+bound. S2b's checked argument-name/layout gate and S6's effectful batch interface remain
+outstanding. S0 definitions and the legacy P0 HTTP execution route remain unchanged.

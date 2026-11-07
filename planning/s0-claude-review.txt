@@ -1,0 +1,101 @@
+S0 INCREMENT REVIEW: Example/Tenant (first increment)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-04.
+Read: proof-first-roadmap.adoc, s0-status.adoc, Example/Tenant/{Model,Selection,Checks}.lean,
+Tests/Axioms.lean, scripts/check.py, lakefile.toml, README.txt lines 7-10.
+Ran: scripts/lake build (succeeded, 119 jobs); lean Tests/Axioms.lean (all 25 tenant entries use
+at most propext and Quot.sound; no Classical.choice); one probe, .lake/review4/P.lean. I did not
+rerun the full scripts/check.py.
+
+VERDICT: A SOUND FIRST INCREMENT. TWO SMALL DEFECTS TO FIX, NO BLOCKERS.
+The domain functions match the roadmap: filter by owner before ID, first owned match, independently
+stored relationships, and identical outcomes for missing and foreign targets. The general theorems
+prove what they state. The modules import only Std and each other, as claimed. One adversarial
+check proves nothing beyond its neighbor (F1), and one claimed adversarial case is not exercised
+(F2). Neither weakens the general theorems. Everything listed under "Remaining" in s0-status is
+correctly acknowledged, and none of it is counted below as a defect.
+
+DEFECTS IN IMPLEMENTED CODE
+
+F1. MEDIUM: fake_label_is_insufficient proves nothing about labels. Checks.lean:48-51
+The model has no notion of a label. The theorem pairs an arbitrary hypothesis label = caller.tenant
+with copied_tenant_is_insufficient.2, so it restates the forged-record result under a misleading
+name. Two documents list it as evidence: s0-status ("ineffective fake labels") and the roadmap's S0
+gate (L208). The roadmap's concern is that caller-supplied provenance (an occurrence, index or tag)
+must not license a value.
+Correction: test the actual label form, Occurrence. Show that a real occurrence licenses only its
+own row, for example that a valid occurrence of foreignProject cannot license
+ProjectLeaf ... ownedProject .title "private". Or show that an occurrence of an owned row does not
+license a value from a different row. If that cannot be stated until AuthTree exists, delete this
+theorem and keep the claim on the remaining list.
+
+F2. LOW-MEDIUM: no fixture rejects a real foreign record, and no fixture rejects a wrong parent.
+Checks.lean:39-46
+copied_tenant_is_insufficient uses a non-member, and wrong_field_rejected uses another field of
+the same row. Neither exercises the tenant conjunct of ProjectLeaf.mk (Model.lean:147), nor a value
+from a different record. projectLeaf_sound still requires owned, so the rule itself is correct.
+My probe confirmed: not ProjectLeaf snapshot caller foreignProject .title "private" is provable,
+because the record is a member but not owned.
+Correction: add that fixture, plus a wrong-parent fixture using the foreign duplicate's title
+"private" under ownedProject. The roadmap names "wrong field/parent".
+
+DESIGN NOTES FOR THE NEXT INCREMENT (not defects yet)
+
+N1. Lookup should return the occurrence. Model.lean:39-44, 146-148
+The probe confirmed this: with owned duplicates a and b sharing ID "x", project returns a, yet
+ProjectLeaf dup caller b .title "second" is derivable. That is correct for a leaf rule, since b is
+owned, but AuthTree's root rule must bind the leaf to lookup's chosen occurrence, as s0-status
+says. Make that mechanical: give lookupOwned an occurrence-returning form plus a value lemma, so
+the root rule names an Occurrence obtained from lookup, not a row value. This also closes F1
+properly.
+
+N2. OwnedProject is value membership. Model.lean:101-105
+Duplicate equal rows are indistinguishable, which is harmless for values. Index any rule that
+depends on the selected position (root lookup, filtered indices) by Occurrence, not by
+OwnedProject.
+
+N3. Field declarations omit list and nullability wrappers. Selection.lean:27-31
+EvalSpec and Conforms need [Project!]!, Project and Project! to specify bubbling. Add a result
+wrapper to ObjectField, and a nullability marker to LeafField, before writing EvalSpec. S2a must
+later prove this hand-written table matches demoAst.
+
+N4. Argument literals are narrow. Selection.lean:28
+project(id:) accepts only a string literal; GraphQL ID input also accepts an integer literal.
+Either is acceptable for P1, but record it as a profile restriction.
+
+N5. projectTasks does not check the parent. Model.lean:78-79
+The probe confirmed that a foreign parent with an owned child ID returns that owned task. Under
+AuthTree this is unreachable, because object nodes require an owned parent, and the task itself is
+owned. State it as an assumed precondition of the child rule, so the S3 contract records it.
+
+N6. ValidPSelection is not decidable. Selection.lean:41
+valid_query is proved by hand. A decision procedure, with soundness against the inductive, will be
+needed for S1 lowering and for checking fixtures cheaply. Keep the inductive as the specification.
+
+AUDIT AND BUILD INTEGRATION
+- lakefile.toml:3 names the module Example.Tenant.Checks in defaultTargets; the build compiles it
+  and its imports. The Example lib has no Example.lean root, so lake build Example would not cover
+  the tenant files. That is fine as long as defaultTargets lists the module.
+- Tests/Axioms.lean lists 25 tenant declarations. The list is maintained by hand, so new theorems
+  are not audited automatically. Consider generating the list, or failing check.py when a theorem
+  in Example/Tenant is missing from it.
+- check.py:28-31 guards GraphQL/ and Example/Tenant/. It does not match the axiom keyword, opaque
+  or debug.skipKernelTC. The audit catches axioms only through listed theorems, so add axiom and
+  skipKernelTC to the source regex.
+- check.py:25 counts occurrences of "axioms" in the output. This works today, but would miscount if
+  a declaration name contained "axioms". Matching each declaration name is more robust (low).
+- README.txt:7-10 is accurate and claims nothing beyond s0-status.
+
+STATUS DOCUMENT
+s0-status.adoc is accurate apart from F1's claim. Its remaining-work list matches the roadmap's S0
+gate, including the key caveat that leaf theorems are not whole-response authorization.
+
+REQUIRED BEFORE THE NEXT INCREMENT
+1. F1: replace or remove fake_label_is_insufficient, and correct s0-status.
+2. F2: add foreign-member and wrong-parent leaf fixtures.
+3. N1 and N3, before AuthTree and EvalSpec are written.
+
+No implementation or planning file other than this report was edited. No agents were spawned.
+The probe file is at .lake/review4/P.lean. Its last line is my own syntax slip and has no bearing
+on the findings; every other example compiled.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s0-claude-review.txt

@@ -1,0 +1,39 @@
+name = "leanGraphql"
+version = "0.0.1"
+testDriver = "graphqlCheck"
+defaultTargets = ["GraphQL", "graphql-demo", "graphql-tests", "Example.Tenant.S6dProofs", "graphql-tenant", "graphql-certified"]
+
+[[require]]
+name = "leanio"
+git = "https://github.com/ecyrbe/leanio"
+rev = "0bb212d57f3dba2d76cf601f76a7c431a51c902e"
+
+[[lean_lib]]
+name = "GraphQL"
+
+[[lean_lib]]
+name = "Example"
+
+[[lean_exe]]
+name = "graphql-demo"
+root = "Main"
+
+[[lean_exe]]
+name = "graphql-tests"
+root = "Tests.Main"
+
+[[lean_exe]]
+name = "graphql-tenant"
+root = "Example.Tenant.Demo"
+
+[[lean_exe]]
+name = "graphql-certified"
+root = "CertifiedMain"
+
+[[lean_lib]]
+name = "Harness"
+
+[[lean_exe]]
+name = "graphqlCheck"
+exeName = "graphql-check"
+root = "Harness.Main"

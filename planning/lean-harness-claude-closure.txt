@@ -1,0 +1,73 @@
+LEAN HARNESS MIGRATION CLOSURE
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Checked against: planning/lean-harness-claude-review.txt (M1, L1-L8), which is preserved.
+
+Files changed since that review (by timestamp):
+- Harness/Common.lean, Check.lean, Audit.lean, HttpTests.lean, SelfTest.lean and README.md.
+- planning/s0, s1, s2a, s2b, s3, s4, s4b, s5, s6a, s6b, s6c and s6d status .adoc files.
+- planning/lean-harness-migration.adoc.
+I read each code change. No application or proof module changed.
+
+Ran, only after /private/tmp/lg-lean-harness-closure.log had finished and no harness, lake or
+lean process was running (that run exited 0 with 696/48 and 30/35):
+- `PATH=<failing python stubs>:$PATH scripts/check --all`. Exit 0. Output in
+  .lake/review5/lean-harness-closure.out.
+  - No Python invocation marker was created.
+  - Self-tests pass, 696 proof reports pass, all 48 compile rejections pass, certified HTTP
+    is 30/30 with the inventory check, and legacy HTTP is 35/35 with the inventory check.
+  - The build-phase message prints.
+- `LEAN_GRAPHQL_TIMEOUT_SCALE=2 scripts/check --self-test`: exit 0.
+- With `LEAN_GRAPHQL_TIMEOUT_SCALE=0` and with `=x`: exit 1 with "LEAN_GRAPHQL_TIMEOUT_SCALE
+  must be a positive integer".
+- Afterwards, a process listing (no kill) showed no leftover sleep, trap-loop,
+  graphql-certified, graphql-demo or graphql-check processes.
+No processes were terminated during this closure review. No implementation, roadmap or
+planning file was edited apart from this report. No agents were started.
+
+VERDICT: CLOSED. The Lean harness migration is approved, with no blockers and no Medium
+issues remaining.
+
+FINDING STATUS
+M1 RESOLVED.
+   - capture reads LEAN_GRAPHQL_TIMEOUT_SCALE and multiplies every subprocess deadline by
+     it: build, fixtures, audits, generator, HTTP client and benchmarks.
+   - Values that are not positive integers fail immediately, with a clear message.
+   - The SelfTest deadline probes pass `scaleTimeout := false`, so the regression tests keep
+     their intended 400 ms deadline under any scale.
+   - Check.run prints and flushes a build-phase message before the buffered build.
+   - Harness/README.md documents the multiplier for cold builds and slower CI.
+   - Residual, Low: build output is still shown only on completion, and the HTTP server
+     readiness wait (15 s, measured in withServer rather than through capture) is not
+     scaled. Both are acceptable.
+L1 RESOLVED. certified and legacy each count executed `check` calls through a local
+   counter, and they fail unless the executed total equals 30 or 35. The final lines now
+   reflect real counts.
+L2 RESOLVED.
+   - sourceGuard now rejects `extern` and `implemented_by` as tokens anywhere, in addition to
+     the compact "@[extern" / "@[implemented_by" forms. This catches attribute lists such as
+     `@[inline, extern x]` and `attribute [extern x] f` / `attribute [implemented_by …] f`.
+   - The new regressions cover these forms.
+   - It is deliberately conservative: the words are banned even in comments of guarded
+     sources. That is acceptable, and the current tree passes.
+L3 Accepted as documented (Lean.Json is shared with the server).
+L4 RESOLVED. Harness/README.md states that GNU time at /usr/bin/time is needed on Linux, for
+   the optional RSS benchmarks only.
+L5 RESOLVED. s4b-status.adoc now says the planning JSON is historical, and that
+   `scripts/check --benchmark batch` writes .lake/benchmarks/s4b.json.
+L6 RESOLVED. Each milestone status carries a NOTE: recorded closure results used the former
+   Python harness, the commands shown are the Lean replacement, and historical measurements
+   are unchanged.
+L7 Accepted (smaller behavioral differences; none affects coverage).
+L8 RESOLVED. lean-harness-migration.adoc records the review, the Python-disabled final gate,
+   the follow-ups, and the benchmark scope accurately: the batch benchmark and the smoke
+   variants were rerun, and the full large schema benchmarks were not.
+   Optional: link this closure file from the migration document as well.
+
+REMAINING (non-blocking)
+- Build output is buffered until the build completes, and the readiness deadline is
+  unscaled.
+- JSON assertions share Lean.Json with the server.
+- The harness is ordinary executable Lean, outside the proved core. It relies on POSIX
+  process groups, /bin/kill, loopback sockets and, for benchmarks, /usr/bin/time.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/lean-harness-claude-closure.txt

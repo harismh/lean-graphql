@@ -1,0 +1,37 @@
+S2a review resolution, 2026-11-05
+Source: planning/s2a-claude-review.txt. The reviewer approved S2a closure.
+Follow-up verified and closed in planning/s2a-claude-closure.txt; Claude independently
+reran all checks after the M2/L1 fixes.
+
+H1: Chose route (a), the recommended parametric compiler/output approach. Recorded as
+an explicit S3 entry gate in proof-first-roadmap.adoc: carrier/scope-parametric
+compiler and universal compile_correct, then whole-plan transport along the S2a
+field bridge. Required endpoint: actual binding plan response = independent EvalSpec
+for every request and valid P1 selection. This is not implemented in S2a, and S3
+contracts must not be frozen before it is discharged.
+
+M1: Recorded as a pre-S2b gate: argument names/layout and AST-coordinate projection
+agreement, same-type argument swap rejection, multi-argument mixed benchmark. Corrected
+status wording to argument TYPE layouts, and explicitly limited current actual adapter
+translation to the tenant's one-argument record. No generic argument-projection proof
+is claimed.
+
+M2: Fixed now. independentBindings directly names user resolve functions and the fixed
+conversions, not projectIdBinding/projectTitleBinding/etc. The canonical target and
+user implementations stay outside future generator output. BindingAgreement is the
+slot/dispatch check; binding_agrees_s1 is the independent semantic anchor. Added
+swappedIdWrapper/wrapperSwapped plus two counterexamples: swapped_wrapper_rejected
+and swapped_wrapper_breaks_semantic_anchor. Both fail for a concrete occurrence whose
+id and title differ.
+
+L1: Removed swapped_metadata_cannot_help rather than presenting an unused argument as
+a stronger property.
+L2: Recorded repeated/broader and per-object certificate experiments as pre-generator
+work. Current JSON retains accurate one-run timing/RSS provenance and scalar workload
+limitations.
+L3: Recorded a separate effectful certified batch interface for S6; deterministic
+exactness is not weakened.
+L4: Parser remains a tested boundary; kernel certificates start at the readable AST.
+
+Validation after M2/L1 fixes: python3 scripts/check.py, 224 discovered proofs plus five
+existing audits, 17 compile rejections and all semantic/SDL tests.

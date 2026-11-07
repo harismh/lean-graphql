@@ -1,0 +1,148 @@
+S6a REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against:
+- roadmap "S6 Carry the proof into the narrow handler": the S6a to S6d decomposition, the
+  driveCertified schema, the exception rule and the S4b obligation;
+- planning/s6a-status.adoc.
+
+Read in full:
+- GraphQL/Plan/CertifiedDriver.lean.
+- Example/Tenant/CertifiedExecution.lean and S6aProofs.lean.
+- Tests/DriverUnprovedAnswer.lean, DriverForeignRequest.lean, DriverTransportAsBatch.lean.
+- The integration: GraphQL.lean import, lakefile default target, Demo.lean calling
+  S6aProofs.nativeTests, and the check.py pins.
+Confirmed by timestamp that no S0 to S5 module changed. Only the files above are new or
+changed.
+
+Ran: python3 scripts/check.py myself, with no other check running. Exit 0. Output in
+.lake/review5/check-s6a.out:
+- 614 audit reports: 527 with axioms (propext, Quot.sound, Classical.choice only) plus 87 that
+  use no axioms. No sorryAx.
+- All 38 expected compile failures pass, including the three Driver* fixtures.
+- Native "S6a: certified IO/state drivers, early failures, batch abort, and exception
+  redaction passed".
+- The earlier generation, semantic and native checks pass.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S6a CLOSES. FULL S6 STAYS OPEN, as do S6b, S6c and S6d.
+There are no blockers and no High or Medium findings. The low items are boundary wording and
+fixture strength for S6d to carry forward.
+
+WHAT IS VERIFIED
+Actual Machine recursion with proof-carrying answers.
+   - driveCertified (CertifiedDriver.lean:15-20) has exactly the roadmap's schematic type.
+   - It is structural recursion on the actual Machine:
+     - at `.pending` it passes proof.1 (Pre) to the backend;
+     - it receives {answer // Post};
+     - it continues with proof.2 answer.val answer.property.
+   - At `.done` it returns ⟨result, proof⟩, so Q comes from the subtype, not from a theorem
+     about m.
+   - It works for any Monad and needs no LawfulMonad and no model of IO.
+   - CertifiedBackend requires evidence for the returned answer. DriverUnprovedAnswer shows a
+     false certificate cannot be built.
+   - drive_pure_value (no axioms) proves that the pure producer agrees with runMachine.
+   - pureBackend builds its evidence from a supplied refinement proof, so it is a producer,
+     not an annotation.
+Request-indexed S5 guarantee.
+   - Guarantee (CertifiedExecution.lean:12-20) is indexed by the Prepared operation, the
+     Request (snapshot and principal) and the supplied variables.
+   - The rejected branch carries an independent VariablesRejected.
+   - The response branch carries independent VariablesMeaning and KeyMeaning witnesses and
+     AuthorizedResponse for the key-instantiated selection under that exact request.
+   - runPrepared builds the evidence from variables_sound, key_sound and the S4 fault Sat
+     resolved_authorized for executeResolved request.
+   - Every Machine call carries the request token, and Fault.contracts states Pre and Post
+     about each call's own request. So a backend's certificate is about that request's
+     snapshot and principal.
+   - response_conforms derives Conforms.
+   - rejected_without_backend and transport_rejected_without_backend show that a variable
+     error is `pure …` with no backend call, for any Monad.
+Pure equality to S5.
+   - pure_prepared_eq_s5: with adapterBackend, built from BindingAgreement, S3 contracts and
+     call_contract, so batch per-position postconditions come from Contracts.Post, the Id run
+     equals S5's actual `execute`, including the S4b dispatcher for clean keys, through
+     drive_pure_value and key_execution.
+   - The certified path itself runs the S4 machine, not the optimized one. The status states
+     this. Optimized fault Sat stays S6b, and pure response equality is correctly not used as
+     a substitute.
+Whole-batch transport abort versus per-key answers.
+   - TransportFailure is outside Answer. DriverTransportAsBatch shows it cannot inhabit a
+     batch Answer vector.
+   - driveTransport returns `.error` without resuming. transport_failure_stops proves this in
+     Id, and drive_transport_success relates it to driveCertified for a lawful monad.
+   - On batchThenCall (a real .batch followed by a single call, under the tenant
+     Fault.contracts):
+     - batch_transport_aborts gives one effect and then `.error .unavailable`;
+     - per_key_fault_continues, where each position gets a certified framework failure,
+       gives two effects.
+     The difference is proved in StateM, not merely asserted.
+Exception redaction.
+   - redactTransport turns any caught exception into `.error .internal` and discards the
+     payload.
+   - exception_redacted, and exception_noninterference for any two secret strings, prove the
+     result does not depend on the exception message.
+   - The native test throws a private IO.userError and observes `.error .internal`.
+   - No per-field resolver answer is fabricated. The certified-answer type rules that out.
+Native IO and state behavior.
+   - statefulBackend (StateM) answers according to its counter, using
+     varying_resolver_permitted. Both the exact run and the faulting run carry the same
+     Guarantee (stateful_execution_certified, stateful_fault_certified).
+   - stateful_fault_observed gives one error, and stateful_calls gives 2.
+   - With variable failure and with argument failure the counter is unchanged (41 stays 41).
+     The argument-error node issues no call.
+   - The IO run of adapterBackend matches the StateM exact result. A rejected request never
+     reaches the throwing backend.
+Scope claims.
+   - The status accurately excludes liveness, network delivery, optimized Sat (S6b), the wire
+     encoder (S6c), and the handler with AuthSound and snapshot acquisition (S6d).
+   - It says no P3 feature is enabled, and that the original S6 acceptance gate is unchanged
+     and open.
+
+FINDINGS (all Low; carry into S6d)
+L1 Redaction is only on the transport entry.
+   - runPrepared, using a plain CertifiedBackend, lets any exception from m propagate with
+     its payload. That is allowed by the roadmap ("the exception prevents a result").
+   - redactTransport catches only exceptions raised inside the wrapped backend call, of the
+     chosen ε. It does not catch exceptions from driver or continuation code, panics, or
+     nontermination.
+   S6d must route external backends through runPreparedTransport with redactTransport, or
+   catch at the handler boundary and emit only a named public failure. Add one sentence to
+   the status: redaction is opt-in through the transport entry, and runPrepared is for
+   producers that do not throw.
+L2 The foreign-request fixture is weak.
+   - DriverForeignRequest relabels Result prepared first supplied as Result … second …, for
+     two distinct variables. Of course the indices differ.
+   - The substantive protection is elsewhere: Pre and Post are stated about each call's own
+     request token, and the Sat proof is built for executeResolved request.
+   A sharper S6d fixture: a backend that answers a call for request r with an outcome
+   computed from another snapshot r', for example a foreign project. It should fail to
+   produce Fault.contracts.Post evidence. This parallels S3's unguardedAdapter.
+L3 Batch transport is exercised only on a hand-built machine.
+   - The tenant certified machine (S4 compiled) issues no .batch calls. The optimized machine
+     is not on the certified path.
+   This is stated. S6b must re-test abort versus per-key on the actual optimized wave once
+   its Sat theorem exists.
+L4 The certified selection is the key-instantiated one.
+   - For an argument-error key, the instantiated selection carries the placeholder id ""
+     next to an error node. The response depends only on the error node.
+   - The link back to the surface operation is the KeyMeaning witness.
+   The status could say so explicitly, so S6c and S6d do not present AuthorizedResponse as
+   being about the surface text.
+L5 transport_failure_stops is stated for Id.
+   - The general-monad fact follows from the definition, and batch_transport_aborts covers
+     StateM.
+   A monad-generic statement ("driveTransport on a failing first call = pure (.error f)")
+   would make the S6d branch proofs cleaner. Optional.
+
+REMAINING S6 GATE (unchanged)
+S6b  Optimized fault Sat: permitted preparation answers, representative membership and
+     ownership, compatibility, per-position reconstruction. The actual optimized wave run
+     with the transport driver: abort versus per-key.
+S6c  Independent ordered JSON relation, total encoder, escaping and numbers, envelopes,
+     root-null bubbling, UTF-8, AuthorizedWireResponse.
+S6d  prepareRequest public failures; per-request authentication and immutable snapshot;
+     runTenantProgram; the LeanIO route returning only certified bytes; HTTP, early-failure
+     and redaction tests (L1, L2). AuthSound and native delivery are trusted.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s6a-claude-review.txt

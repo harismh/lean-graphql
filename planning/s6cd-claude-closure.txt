@@ -1,0 +1,128 @@
+S6c + S6d CLOSURE REVIEW (full S6)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Checked against:
+- planning/s6cd-claude-review.txt (B1, M1, D-L1 to D-L5, C-L1, C-L2), which is preserved
+  unchanged;
+- the roadmap S6 acceptance;
+- the updated planning/s6d-status.adoc and planning/s6-status.adoc.
+
+Files changed since my review (by timestamp):
+- Example/Tenant/CertifiedHandler.lean, Http.lean, PublicRequest.lean, S6dProofs.lean,
+  Server.lean.
+- Tests/HandlerUnacquiredSnapshot.lean (new), HandlerForeignCredential.lean (new, already
+  noted in the review), HandlerRawBody.lean.
+- scripts/check.py (the new pin), planning/s6-status.adoc, planning/s6d-status.adoc and
+  README.txt.
+I read each code change. S6a, S6b, S6c and the wire modules are unchanged.
+
+Ran, after waiting for the /private/tmp/lg-s6-closure-check.log run to exit, so no build
+overlapped (that run also passed, with 48 rejections):
+- python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s6-closure.out:
+  - 696 audit reports (public_failure_independent removed, unacquired_snapshot_rejected
+    added). Only propext, Quot.sound and Classical.choice appear. No sorryAx.
+  - All 48 expected compile failures pass, including HandlerUnacquiredSnapshot.
+  - The escape-hatch scan passes, and all four native S6a to S6d lines print.
+- python3 scripts/test_s6_http.py: all 30 certified HTTP checks pass.
+- python3 scripts/test_http.py: all 35 legacy HTTP checks pass.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started. Nothing in P3 was looked at.
+
+VERDICT: B1 IS RESOLVED. NO BLOCKERS REMAIN. S6c AND S6d CLOSE, AND FULL S6 CLOSES with the
+scope below.
+
+FINDING STATUS
+B1 RESOLVED (unconstrained snapshot in the handler certificate).
+   - Acquire m AcquireSound (CertifiedHandler.lean:11-12) now returns
+     m (Option {snapshot // AcquireSound principal snapshot}), parallel to Authenticate.
+   - GoodReply.application (lines 15-24) binds a single implicit `snapshot` and uses it in
+     both places:
+     - `acquired : AcquireSound principal snapshot`;
+     - `authorized : Wire.AuthorizedWireResponse snapshot principal …`.
+     `principal` is likewise shared with `authenticated : AuthSound request.credential
+     principal`. So the identity, the store and the authorization certificate are all about
+     the same pair.
+   - promote takes `snapshot : {s // AcquireSound principal.val s}` and requires
+     `CoreReply ready ⟨snapshot.val, principal.val⟩`. Both the core certificate and the
+     acquisition evidence therefore refer to snapshot.val. An unrelated snapshot cannot be
+     inserted.
+   - runTenantProgram passes the acquired subtype's value to authenticatedCore and to the
+     backend factory, and passes its proof to promote.
+   - Http.Outbound, receive, handler and routes carry AcquireSound. Server instantiates
+     DemoAcquireSound.
+   - Negative evidence:
+     - unacquired_snapshot_rejected, which uses no axioms: otherRequest.snapshot does not
+       satisfy DemoAcquireSound for any principal;
+     - HandlerUnacquiredSnapshot calls the actual promote with that snapshot and fails at the
+       evidence obligation, with the expected decide diagnostic.
+   - The status lists AcquireSound as an explicit producer obligation alongside AuthSound and
+     backend refinement, not as a theorem about an opaque database. That is the right trust
+     framing.
+   - The demo policy (equality with S4bProofs.request.snapshot, for every principal) is a
+     fixed in-memory store, which is honest for the demo. Isolation between tenants still
+     comes from AuthorizedResponse over that store, as the HTTP tenant-2 check confirms.
+M1 RESOLVED (caller identity).
+   - Outbound is indexed by the incoming Authorization header, and the wrapped request must
+     have an equal credential. receive discharges this by rfl.
+   - HandlerForeignCredential confirms it.
+   - Residual, accepted: the wrapped request's body, accept and content-type are still
+     existential. The status scopes header and body decoding as a tested native boundary.
+     Optional future tightening: index by the whole Protocol.Request that receive builds.
+D-L1 RESOLVED by documentation. Backend exceptions give 503 (redacted through
+     TransportFailure), and auth, acquire and outer exceptions give 500. The status and
+     test_s6_http.py agree.
+D-L2 RESOLVED. In authenticatedCore, the `⟨.error _, guarantee⟩` branch is now
+     `nomatch (False)`. The proof is variables_complete ready.interpreted against
+     variables_rejected_complete from the Guarantee's rejected case. So no post-acquisition
+     variable failure can be emitted, and that is a kernel fact.
+D-L3 RESOLVED. The trivial public_failure_independent was removed. The property follows from
+     publicReply's signature (Failure and Media only).
+D-L4 RESOLVED. The outer catch in runTenantProgram uses ready.media.
+D-L5 No change needed. Panics, nontermination, cancellation and post-respond LeanIO behavior
+     are outside, and the status says so.
+C-L1 OPEN, optional. Unambiguity of the grammar (EncodesOrderedJSON v t ∧ v' t → v = v') is
+     not proved. The roadmap does not require it.
+C-L2 Accepted. The closed message vocabulary relation mirrors its table.
+
+NOTES (non-blocking)
+N1 s6d-status.adoc still says "47 compile-rejection fixtures" in its full-gate line. The
+   current count is 48. Update it when the roadmap is marked closed.
+N2 The roadmap S6 bullets still read "Review pending" for S6c and S6d. Those are planning
+   edits for the maintainer.
+
+WHAT S6 ESTABLISHES (closure scope)
+- For a dynamically submitted P2 request on the real LeanIO route, the returned bytes are one
+  of two things.
+  - A closed public failure, encoded in the independent JSON grammar, with a status that
+    matches its failure.
+    - Preparation failures (media, method, content type, body and query limits, JSON and
+      envelope, parse, operation name, validation, variables) happen before any
+      authentication, acquisition or backend effect.
+    - Every caught exception is redacted.
+  - Or, under the same caller credential:
+    - successful preparation;
+    - AuthSound(credential, principal);
+    - AcquireSound(principal, snapshot);
+    - independent variable and key meanings;
+    - bytes that UTF-8-decode to an ordered-JSON text encoding a structured response, which
+      is AuthorizedResponse for exactly that snapshot and principal under the
+      key-instantiated selection.
+- That response comes from the actual S5 dispatcher and the S4b optimized Machine through
+  S6a's certified transport driver and S6b's universal fault Sat. Per-key faults and
+  whole-batch transport failure are kept distinct, and errors appear at their original
+  coordinates.
+
+TRUST BOUNDARY (accurately stated in the status documents)
+- The text decoders are tested, not proved: Lean.Json.parse, checkEnvelope and decode,
+  parseOperation, and HTTP header and body extraction.
+- AuthSound, AcquireSound and backend refinement for any non-demo producer. The demo bearer
+  allowlist and the fixed store are test policy only.
+- Native runtime, LeanIO, sockets, delivery, termination, liveness, scheduling, cancellation
+  and resource bounds.
+- Routes and methods other than /graphql POST/GET use LeanIO defaults, outside the
+  certificate.
+- Optimized deduplication shares permitted faults across equal keys (S6b L4).
+- Generic wave compatibility is for all vectors. Refine it before nontrivial compatibility
+  is introduced (S6b L1, recorded for S7 and S8).
+- P3 features are not enabled. S7 is the next slice.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s6cd-claude-closure.txt

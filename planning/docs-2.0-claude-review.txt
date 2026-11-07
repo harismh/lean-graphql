@@ -1,0 +1,111 @@
+DOCUMENTATION 2.0 DRAFT REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Scope: README.adoc, planning/release-2.0-draft.adoc, and the archive preface of
+planning/legacy-prototype-guide.txt. Documentation only. No full suite was run, as requested.
+
+What I checked:
+- I read both drafts in full.
+- I checked every cited theorem against its source:
+  - Runtime.run_authorized (Execution.lean:32);
+  - Wire.encodeAuthorized;
+  - S4bProofs.whole_response, and the 9/12 counts at S4bProofs.lean:117-118
+    (decide +kernel);
+  - ItemsExample.permitted_driver_bound, whose specification has rows.length ≤ bound;
+  - Handler.GoodReply with AuthSound and AcquireSound.
+- I extracted all four [source,lean] blocks myself (three in the README, one in the
+  release draft) to .lake/review5/docs/Ex0-3.lean. Each compiles with
+  `scripts/lake env lean`, with no errors.
+- I resolved every link: target in all three files. All 15 exist.
+- I checked the claims against the S6 closure: 696 audits, 48 rejections, 30 + 35 HTTP
+  checks, and S0 to S6 reviews present in planning/.
+- I confirmed the roadmap and s6-status now say CLOSED.
+- I confirmed lakefile version 0.0.1 and lean-toolchain v4.33.0.
+- I confirmed that Server binds 127.0.0.1, and that the curl output in the README matches
+  test_s6_http.py's first check.
+Not verified: that legacy-prototype-guide.txt is byte-for-byte the old README.txt. There is no
+git history and no other copy exists. Its content and preface read consistently.
+No other file was edited.
+
+VERDICT: APPROVED WITH SMALL EDITS.
+- Framing, scope and proof claims are accurate against the S6 closure.
+- Nothing claims production maturity, generic GraphQL support, IO correctness or general
+  optimization proofs. The trust-boundary table and the "Work in progress" sections are
+  notably careful.
+- One Medium item (the version naming) should be settled before anything is published. The
+  rest are wording.
+
+MEDIUM
+M1 "2.0" conflicts with the declared version and with the developer-preview framing.
+   - lakefile declares 0.0.1. There has been no 1.0. Both documents call this a
+     "developer preview".
+   - A reader seeing a "2.0" release will assume a stable major version, which the drafts
+     explicitly disclaim.
+   - The draft says no version was changed, which is honest. But the title
+     "lean-graphql 2.0" will travel without that caveat.
+   Before publishing, either:
+   - explain the numbering in one line (for example, "2.0 marks the proof-first rewrite;
+     1.x was the prototype"), and bump the lakefile version together with the tag; or
+   - use a 0.x preview version, for example 0.2.0, which matches "developer preview".
+   This is the maintainer's decision. It is not an accuracy defect in the text.
+
+LOW (wording; each is a one-line fix)
+L1 Tagline punctuation.
+   - The requested tagline was exactly "Proof-oriented GraphQL framework in Lean 4".
+   - Both files render it as `*Proof-oriented GraphQL framework in Lean 4.*`: bold, with a
+     trailing period.
+   Drop the period if exact text matters, for example for a package or repository
+   description.
+L2 README's first proof example is introduced as "the actual execution theorem".
+   - Runtime.run_authorized is about the deterministic, unoptimized runtime with an
+     agreeing in-memory adapter.
+   - It is not the certified effectful, optimized HTTP path. The preceding paragraph is
+     about that path ("carries this evidence through to the response bytes"), so a reader
+     may conflate the two.
+   Suggested wording: "Here is one link in that chain: the theorem for the deterministic
+   in-memory runtime…". Optionally add a pointer to Handler.GoodReply /
+   returned_bytes_certified as the end-to-end handler guarantee.
+L3 The README lists "permitted resolver faults are covered" just before that example.
+   - Faults are covered by the S4 and S6b fault proofs, not by run_authorized.
+   Either move the clause after the optimization section's fault paragraph, or say
+   "(covered by separate fault-contract proofs)".
+L4 The release draft says "65 real HTTP checks".
+   - 35 of them exercise the legacy prototype server, and the README says that prototype
+     does not inherit the proofs.
+   Write "30 certified-route HTTP checks plus 35 legacy regression checks", as the README
+   already does.
+L5 Optimization scope.
+   - "The implemented batching transformation groups repeated Task.project lookups" is
+     accurate. But the dispatcher applies it only to the recognized
+     projects → tasks → project shape, when a keyed capability is present. Everything else
+     runs the unoptimized machine unchanged.
+   One clause ("for the recognized nested query shape") would prevent a reader from
+   assuming a general query optimizer.
+L6 Encoding claim precision (optional).
+   - "proved against independent ordered JSON and response-envelope relations" is correct.
+   - If space allows: the relation is a grammar, not a decoder round-trip, and grammar
+     injectivity is listed as a follow-up in the roadmap.
+   Not necessary for a README. It would be fair in the release notes' work-in-progress
+   paragraph.
+L7 "Proved" row in the coverage table.
+   - "checked-plan execution" is vague. Consider "execution of checked plans agrees with the
+     independent semantics".
+   - "call counts" should read "Machine-call counts", matching the earlier paragraph.
+
+ORDERING, EXAMPLES, LINKS
+- The README order works:
+  1. tagline and summary;
+  2. a concrete guarantee with a compiling theorem;
+  3. run the example;
+  4. how the proof travels (pipeline plus the encodeAuthorized example);
+  5. the optimization example;
+  6. how to build a proved application;
+  7. WIP and boundaries;
+  8. how to check.
+  The examples are short, use real names, and compile.
+- The ASCII logo is clean in a [listing] block and renders in plain text.
+- The release draft is concise. It reuses the encoding example and points to the README
+  for the rest, which is appropriate.
+- All links resolve. The release draft's `../README.adoc` is correct relative to planning/.
+- The legacy guide preface states clearly that it is historical, and points to README.adoc.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/docs-2.0-claude-review.txt

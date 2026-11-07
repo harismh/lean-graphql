@@ -1,0 +1,84 @@
+S1 / GRAFAST CLOSURE REVIEW: proof-first-roadmap.adoc and s1-grafast-review-resolution.txt
+Reviewer: Claude (Opus 5.5). Date: 2026-11-04. Plan review only; nothing was built or run.
+Checked against: s1-grafast-claude-review.txt (B1, B2, H1-H3, M1-M4, L1).
+
+VERDICT: S1a-S1d MAY BEGIN. EVERY FINDING IS RESOLVED; NO S1 BLOCKER REMAINS.
+Two wording defects remain in the S4b and S2a statements (C1, C2). They do not affect any S1
+definition, but should be fixed before S2a fixes its binding slot. The new Task.project target is a
+better choice than the earlier draft, and the plan is feasible as written.
+
+FINDING STATUS
+B1 RESOLVED. S1 owns the gather, pointwise-map, scatter and vector-load syntax and semantics
+   (L325-336). S4 interprets every form, and S4b adds no syntax, denotation or call family
+   (L335-336). The flatten and duplicate-key laws in S1d (L376) now refer to S1's own forms.
+B2 RESOLVED. Call.batch is indexed by n, with a pointwise Pre/Post (L246-258). The roadmap states
+   correctly that the postconditions do not by themselves give exactness (L256-257). The S2a slot
+   for an optional batch capability, preserved by S2b, closes the earlier binding gap (L410-414).
+H1 RESOLVED. The two routes are separated and assigned purposes (L489-495). S3 contracts now cover
+   nodes, rows, captures, gather/scatter and both call forms (L432-435).
+H2 RESOLVED. Equivalence is stated over a deterministic backend function, and IO receives safety
+   only (L577-583, L794-798). Counts are over the Machine program, with a physical-request caveat.
+H3 RESOLVED. Only verified lowering produces plans. Author plan resolvers are a named future
+   extension with their own obligation (L351-355).
+M1 RESOLVED. Termination is structural with no fuel (L357-361, L505-506). The success and
+   exactness statements in L102-106 and the theorem chain no longer carry fuel premises.
+M2-M4 and L1 RESOLVED (L373-375, L586-593, L399-402, L773-777). One stale line remains; see L-a.
+
+THE TASK.PROJECT REDIRECTION
+This is sound, and it is an improvement. The earlier draft needed task-ID loads hidden inside an
+opaque Project.tasks resolver, which only the future plan-resolver API could expose. Task.project
+is an existing selected field-call node, so the rewrite stays within the declared interface. The
+key-sufficiency theorem (L567-569) is the right extra obligation: rows differ but outcomes depend
+only on (scope, projectId). It rests on the S3 row invariant that the rows are owned tasks, which
+the new node/row contracts supply. Counting Project.tasks separately (L557-558) keeps the bound
+honest.
+Feasibility: the gather here spans two region levels (project rows, then task rows). It is the
+composition of two one-level gathers. S1d already requires "nested parent positions" (L377), so
+state the composition law there.
+
+REMAINING CORRECTIONS (wording only; not S1 blockers)
+
+C1. The chain's bound can be met vacuously. (L800-802 against L589-591)
+countedMachineBatchCalls counts batch calls only. A strategy that falls back to single calls emits
+none, so it satisfies ceil(U/B) trivially. L590 says "no additional single-lookup calls for that
+transformed load", but the chain statement drops this, and L414's prose rule is not a theorem.
+Correction: count every primitive call issued for that load, single and batch, as in
+  countedPrimitiveCalls (load regionWave) <= ceil(U / B)
+or state both conjuncts. Make the theorem conditional on the batch capability being present, so
+the fallback case is plainly outside it.
+
+C2. The deduplication key and its sufficiency law have no home in the interface.
+(L410-413, L566-569, L794-795)
+Deduplication needs a field-specific key function, such as Task to (scope, projectId). It also
+needs the law that equal keys give equal outcomes for the backend actually used. The roadmap proves
+that law for the pure backend only. The general equivalence theorem assumes only
+DeterministicBatchRefinement, the pointwise batch-equals-single law, which does not justify sending
+one representative per key. As written, the theorem is unprovable for a general deterministic
+backend, or silently specialized to the pure one.
+Correction:
+ - Put an optional key function and its sufficiency obligation into the S2a batch-capability slot,
+   next to the pointwise postcondition, so S2b preserves it.
+ - Include key sufficiency in the eligibility predicate or in the refinement premise of the S4b
+   theorem.
+ - Make U in the bound (distinctScopedKeys) refer to that same key function.
+ - Scope may be a request-context token rather than data. That keeps L344-347, which forbids
+   capturing a principal's records in plans, consistent with Call.batch's scope argument (L250).
+
+LOW
+L-a. L17 still says the S1 architecture is "awaiting Claude review". Update it, and L19-23, with
+     this result.
+
+NOTES
+- S4 now has to prove exactness for gather/scatter/vector-load interpretation, although P1 lowering
+  does not emit them. That is the intended price of B1, and it keeps S4b a rewrite. Expect the S4
+  interpreter proof to be correspondingly larger.
+- The S2a experiments allowed after the S1b-c gate (L400-401) should include the batch-capability
+  slot from C2, because changing that slot after S3 starts would reopen the binding interface.
+
+ORDER OF ACTION
+Begin S1a now. Fix C1 and C2 in the roadmap before S2a freezes BindingsByField. Neither blocks
+S1b-S1d.
+
+No roadmap or implementation file was edited. No tests or agents were run.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s1-grafast-claude-closure.txt

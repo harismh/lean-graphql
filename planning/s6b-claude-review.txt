@@ -1,0 +1,224 @@
+S6b REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-06.
+Checked against:
+- roadmap "S6 Carry the proof into the narrow handler": the S6b obligation (optimized fault Sat,
+  permitted preparation answers, representative membership, ownership, compatibility,
+  per-position reconstruction) and S6a L3;
+- planning/s6b-status.adoc;
+- planning/s6a-claude-review.txt.
+
+Read in full:
+- GraphQL/Plan/BatchSafety.lean.
+- Example/Tenant/BatchFaultInputs.lean, BatchFaultFrames.lean, BatchFaultCompletion.lean,
+  BatchFaultFinish.lean, BatchFaultExecution.lean.
+- Example/Tenant/CertifiedBatchExecution.lean and S6bProofs.lean.
+- Tests/BatchFaultFalsePreparation.lean, BatchFaultWrongPaths.lean, BatchFaultUnkeyedReuse.lean.
+- The code under proof, unchanged: Example/Tenant/BatchPlan.lean (prepare, rows, finish,
+  optimized), BatchExecution.lean (recognize, execute), GraphQL/Plan/BatchWave.lean (driver,
+  Eligible, wave).
+- The integration: the GraphQL.lean import of BatchSafety, the lakefile default target, Demo.lean
+  calling S6bProofs.nativeTests, and the check.py pins.
+Confirmed by timestamp that, since my S6a review, the only changed .lean files are the files
+above plus GraphQL.lean and Demo.lean. No S0 to S6a module changed. The optimized
+implementation and renderer are the ones S4b closed.
+
+Ran: python3 scripts/check.py myself, with no other check running. Exit 0. Output in
+.lake/review5/check-s6b.out:
+- 658 audit reports. 87 use no axioms; the rest use only propext, Quot.sound and
+  Classical.choice. No sorryAx.
+- All 41 expected compile failures pass, including the three BatchFault* fixtures.
+- The native "S6a: ..." and "S6b: optimized fault contracts, certified IO, per-occurrence
+  errors, and whole-batch abort passed." lines both print.
+- The audit covers load_contract, wave_contract, rows_wave_contract, every BatchFault.* theorem
+  and every S6bProofs theorem.
+These counts match /private/tmp/lg-s6b-check.log as reported. I did not rerun the benchmark,
+since this request did not ask for it and the S4b machine and benchmark code are unchanged.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S6b CLOSES. FULL S6 REMAINS OPEN, pending S6c and S6d.
+There are no blockers and no High or Medium findings. S6a L3 is resolved. The low items below are
+for S6c, S6d or later slices to carry forward.
+
+WHAT IS VERIFIED
+Non-vacuous, universal fault Sat on the actual optimized Machine.
+   - optimized_contract (BatchFaultExecution.lean:11-20) is a Sat over `Batching.optimized`
+     itself: prepare, then Batch.rowsWave, then finish. These are the same definitions
+     optimized_reference and the S4b count theorems are about. No substitute evaluator is used.
+   - Sat quantifies over every answer satisfying Fault.contracts.Post at every suspension.
+   - No proof step uses runMachine, optimized_reference or a deterministic response equality.
+     Pure equality appears only in pure_eq_s5, as a separate corollary.
+   - Satisfiable on both sides:
+     - Pre is discharged at each call from real evidence (below).
+     - Post is inhabited by the exact producer (adapterBackend), by per-position batch faults
+       (fault_answers_permitted) and by single-call faults (faultAt). All of them drive the
+       certified Machine to completion in StateM.
+   - execute_contract covers both dispatcher branches. The excluded branch reuses S4's
+     execution_authorized. In the eligible branch, `cases shape` rewrites the surface to the
+     recognized selection, so the guarantee is about the dispatched surface.
+   - key_contract covers both S5 key outcomes, including the argument-error node.
+All permitted preparation answers.
+   - PreparedEvidence (BatchFaultInputs.lean:10-12) is stated about the actual answers carried
+     in `prepared`: the projects Post, and a tasks Post for each actual parent
+     `branchRows .projects prepared.projects`[i]. It is not stated about preparedFor or any
+     exact staged value.
+   - prepare_contract proves it under the fault contracts by following the real Machine shape:
+     the root call, then sat_tabulate over the tasks calls. The tasks Pre at row i comes from
+     post_rows_owned applied to the actual projects answer.
+   - post_rows_owned handles both Post branches.
+     - Exact answers: the owned rows come from the contract's ownership component.
+     - Framework faults: branchRows is empty, so nothing needs owning.
+     So when a preparation call faults, the wave simply shrinks, and
+     preparation_fault_smaller_wave shows this (6 calls).
+   - Negative evidence: fabricated_preparation_rejected (a positive theorem) shows an empty
+     project list is not PreparedEvidence for the fixture request. The
+     BatchFaultFalsePreparation fixture fails at the expected `rfl`.
+Representative membership, ownership and compatibility (generic BatchSafety).
+   - load_contract takes Pre for every original input and compatibility for each emitted chunk
+     (`Vector.ofFn (inputs.get ∘ sourceIndex chunk)`). It moves postconditions back to original
+     positions through chunk_position.
+   - wave_contract proves Pre for the loaded vector only from representative_mem (the chosen
+     representative is a member of `inputs`) together with the caller's membership-indexed
+     `parents`.
+   - Reuse needs an explicit transfer law `reuse`, quantified only over members of `inputs`
+     with equal keys and over every answer. It is applied along representative_key and
+     position_key. There is no appeal to deterministic key sufficiency at this level.
+   - rows_wave_contract moves the result back to Gathered coordinates through rowPosition.
+   - Tenant instance:
+     - prepared_input_pre takes membership in rowInputs to OwnedTask through
+       prepared_row_owned. That is exactly the taskProject Pre.
+     - Compatibility is discharged by the tenant's True predicate, and the status says so.
+Key-postcondition transfer for every permitted answer.
+   - reuse_post (BatchFaultInputs.lean:60-84) considers both cases.
+   - Exact case: Expected for the left input equals Expected for the right input. The chain is:
+     manual_expected, then canonical agreement through BindingAgreement against the
+     independent bindings, then batch.key.sufficient on the adapter's single resolver, then
+     back. So the planner key is linked to the independent meaning, not merely to the adapter.
+   - Fault case: the declared framework failure transfers unchanged.
+   - unkeyed_reuse_rejected shows that a Post for key "shared" does not give a Post for key
+     "missing". BatchFaultUnkeyedReuse rejects the identity transfer as a type mismatch.
+Separation of the pure planner key certificate from the effectful answer producer.
+   - The adapter is used only in three places:
+     - recognize and capability?, to choose the shape;
+     - Eligible.key.key, to deduplicate;
+     - BindingAgreement, inside proofs.
+   - Every Machine call is answered by the backend passed to driveCertified or driveTransport.
+     BatchPlan's prepare, invoke and finish emit `.pending` calls, and Batch.wave emits `load`,
+     which is `.batch` calls. Nothing in the Machine calls `(adapter field).single`.
+   - CertifiedBatchExecution.runPrepared and runPreparedTransport take the certificate from
+     BatchFault.key_contract, a Prop that is not run, and the answers from `backend`.
+   - In S6bProofs the backends really are separate producers:
+     - perKeyBackend makes batch position 0 fault while the adapter capability is exact;
+     - failBatch fails whole batches;
+     - faultAt switches meanings by counter.
+     All of them run under the same adapter key certificate.
+Ownership and per-position reconstruction.
+   - FrameAt (BatchFaultFrames.lean:10-16) quantifies over every source occurrence that maps
+     to the record and is owned. sat_forall keeps a certificate for all of them at once. This
+     is sound, since Sat's call obligations do not depend on Q, and the required Nonempty
+     comes from owned_project_source.
+   - branch_frame rebuilds the parent's compiled frame from the children's FrameAt
+     certificates at childPath of the *original* index i, with independent evidence for each
+     branch:
+     - domain_branch_evidence plus expected_transport for an exact answer;
+     - framework_branch_evidence with no rows for a fault.
+     Rendering is the original compiled `render` through object_frame_render. No new output
+     semantics is introduced.
+   - finish_contract follows finish's actual nesting: tabulate over parents, tabulate over
+     tasks, then traverse over projects. Each task outcome's Post is the
+     `permitted ⟨parent, task⟩` from rows_wave_contract, at the Gathered coordinate. Paths are
+     built from parent.val and task.val, never from key positions. Duplicates, filtered
+     foreign tasks, empty parents, error order and null bubbling are all covered, because the
+     final step is erasure of the original root frame (`erased.trans rendered`).
+   - original_occurrence_paths (decide +kernel) gives exactly five errors at original
+     coordinates for the duplicate and missing-key workload. Shared representative faults
+     appear at each occurrence (0/0, 0/1 and 1/1), and application errors stay at 0/2 and
+     1/0. child_fault_path places a child-region fault at path 0 0 ++ [title].
+Whole-batch abort versus per-key faults on the actual optimized wave (S6a L3).
+   - transport_aborts_optimized: driveTransport failBatch on the real optimized program
+     returns `.error .unavailable` after 6 effects: the preparation calls, then the first
+     batch, which fails. No later chunk or child call runs.
+   - per_key_continues_optimized: 7 effects with certified per-key faults, which continue.
+   - root_fault_no_wave gives 1 call. empty_wave_no_batch: with no tasks, failBatch never sees
+     a batch, so the run succeeds after 5 calls.
+   - prepared_entry_uses_batch: the S5 entry (CertifiedBatchExecution.runPrepared) really
+     dispatches to the optimized machine (7 calls, the same as faultRun), and
+     prepared_entry_guarantee holds.
+   - variable_rejection_no_effects and argument_error_no_effects leave the counter at 41.
+   - rejected_without_backend holds for any Monad.
+   - The native test compares the IO certified pure run with Runtime.run.
+Precise scope.
+   - The status correctly says three things:
+     - effectful safety is authorization and conformance for every permitted answer, not
+       equality with an unoptimized effectful run;
+     - deduplication shares faults;
+     - the S6a entries still run the S4 machine.
+   - It makes no physical-batching, concurrency, transport-resource or wall-clock claim. The
+     12-to-9 count is left as S4b's.
+   - Redaction is still opt-in through redactTransport, and S6d must control the outer
+     boundary. This was S6a L1, now stated.
+   - P3 stays disabled.
+
+FINDINGS (all Low; none blocks closure)
+L1 Generic wave compatibility is required for all vectors, not for emitted chunks.
+   - load_contract takes compatibility per emitted chunk.
+   - wave_contract and rows_wave_contract instead require
+     `∀ {n} (rows : Vector _ n), contracts.compatible field context rows`.
+   - That is harmless for the tenant (True), but it means the generic wave theorem cannot be
+     used with a nontrivial compatibility predicate (same tenant, size limit, and so on).
+   - The status line "emitted chunks have explicit compatibility evidence" describes
+     load_contract only.
+   Before a schema with real compatibility uses the wave (S7 or S8), restate the premise over
+   the representative chunks, or over sub-vectors of the members. Optionally narrow the status
+   wording now.
+L2 The batch transport entry has no rejected-without-backend theorem.
+   - CertifiedBatchExecution proves rejected_without_backend for runPrepared only.
+   - S6a had transport_rejected_without_backend for its transport entry. There is no
+     counterpart for CertifiedBatchExecution.runPreparedTransport, which is the entry S6d
+     should use (S6a L1).
+   The proof is a copy of S6a's. Add it in S6d at the latest.
+L3 BatchFaultWrongPaths is a weak fixture.
+   - It refutes the false claim `faultRun.1.val.errors = []`. That is a statement about the
+     test value, not a mutated implementation that erases or moves errors.
+   - The substantive evidence is original_occurrence_paths, which fixes the exact list, and
+     the general finish_contract.
+   The status wording "rejects ... erasing reconstructed errors" overstates this somewhat.
+   Optional: a mutated `finish` that indexes paths by key position should fail to give
+   finish_contract or original_occurrence_paths.
+L4 Faults are shared across equal keys, so observable errors differ from the reference.
+   - With deduplication, one permitted representative fault becomes an error at every
+     equal-key occurrence. The reference Machine could fault only some occurrences.
+   - Both are permitted, and the status says so. This is not a defect.
+   S6d documentation and any API comment should not promise per-occurrence independence of
+   faults on the optimized path.
+L5 The S6a and S6b entries coexist.
+   - CertifiedExecution.runPrepared still runs the S4 machine, and
+     CertifiedBatchExecution.runPrepared runs the dispatcher.
+   - Both carry the same Guarantee, so either is sound.
+   S6d should name which one the handler uses, presumably the batch transport entry wrapped
+   in redactTransport, so that tests and claims refer to the deployed path.
+N1 Cosmetic.
+   - sat_forall, traverse_contract, related_get and related_ofFn are generic Machine and list
+     lemmas, but they live in the tenant namespace. Moving them to GraphQL/Plan would help
+     the S7 and S8 generators.
+   - The existing unused-simp-argument warnings remain (none are new in the S6b files).
+
+S6a CARRY-FORWARD STATUS
+L1 (redaction is opt-in): now stated in the status. The S6d obligation remains.
+L2 (weak foreign-request fixture): still open for S6d.
+L3 (batch transport only on a hand-built machine): RESOLVED by transport_aborts_optimized and
+   per_key_continues_optimized.
+L4 (key-instantiated selection): unchanged. key_contract certifies the instantiated
+   selection.
+L5 (Id-only stop theorem): unchanged and optional.
+
+REMAINING S6 GATE
+S6c  Independent ordered JSON relation, total encoder, escaping and numbers, envelopes,
+     root-null bubbling, UTF-8, AuthorizedWireResponse.
+S6d  prepareRequest public failures; per-request authentication and an immutable snapshot;
+     the handler uses CertifiedBatchExecution.runPreparedTransport with redactTransport, or
+     an equivalent boundary catch (S6a L1, L5 here); a transport rejected-without-backend
+     theorem (L2 here); a sharper foreign-snapshot fixture (S6a L2); the LeanIO route
+     returning only certified bytes. AuthSound and native delivery are trusted.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s6b-claude-review.txt

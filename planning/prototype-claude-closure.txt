@@ -1,0 +1,42 @@
+CLOSURE REVIEW: U2-U5 AND U7
+Reviewer: Claude (Opus 5.5). Toolchain: Lean 4.33.0 via scripts/lake.
+Companion to prototype-claude-review.txt and prototype-claude-rereview.txt, both unchanged.
+
+VERDICT: CLOSED. U2, U3, U4, U5 and U7 are all fixed, with no new findings in this scope.
+
+U2 CLOSED. GraphQL/Derive.lean:9-10, all type/contract declaration and reference sites.
+  The mapping is injective: _root_ becomes SDL__root_, every SDL_x becomes SDL_SDL_x, and all
+  other names are unchanged, so no two inputs share an output. Fixtures cover enum, input, object
+  and interface paths, including the collision between _root_ and SDL__root_.
+  Probe beyond the fixtures passed: field arguments on an object named _root_ (Args.«_root_.f»),
+  SDL_-prefixed enum and recursive input names, and prepare on a schema using them.
+
+U3 CLOSED. GraphQL/Syntax.lean:185-187; regression at Tests/Main.lean:121.
+  Probe: input X implements I returns "input objects cannot implement interfaces". An input type
+  named implements still parses, and interface J implements I still parses.
+
+U4 CLOSED. Tests/WrongUnion.lean and Tests/WrongReference.lean.
+  WrongUnion now fails on the absent Demo.Types.SearchResult.gql_Query. WrongReference fails with
+  an application type mismatch on GraphQL.Ref "Query", so it proves reference typing on a real
+  constructor. Both failures were observed directly, and both fixtures are listed in check.py.
+
+U5 CLOSED. GraphQL/Syntax.lean:62.
+  Probe: a raw tab decodes to the string "x\ty". The earlier backslash arm still takes precedence,
+  so a backslash followed by a tab stays an invalid escape, and an escaped backslash followed by
+  a raw tab parses. Raw newline stays rejected.
+
+U7 CLOSED. GraphQL/Validation.lean:107-115, README.txt:32-37.
+  The dead validation branch is gone, and the Option parameter with it; collectFields and
+  mergedFields now take Inputs, and the only external caller is Execution.lean:12. README now
+  states the mk, input.x and ref exceptions, the SDL_ escape, and the missing enum Repr/BEq.
+
+STILL OPEN BY AGREEMENT (not reviewed here)
+U1, U6 and U8 remain next-milestone limitations.
+
+VALIDATION RUN
+Source inspection of the listed changes; one short probe file at .lake/review3/P.lean; direct
+compilation of the two negative fixtures. I did not rerun scripts/check.py or scripts/test_http.py;
+those pass results are as you reported them. No stress tests, no agents, no implementation edits.
+No lean or graphql-demo process was left running.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/prototype-claude-closure.txt

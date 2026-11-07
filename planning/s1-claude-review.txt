@@ -1,0 +1,208 @@
+S1 IMPLEMENTATION REVIEW: S1a-S1d against proof-first-roadmap.adoc (S1) and s1-status.adoc
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05. This is an implementation review; the earlier
+s1-grafast-* reports reviewed the roadmap only.
+
+Read: GraphQL/Plan/{Schema,Graph,Rows,CallDenotation,Completion}.lean;
+Example/Tenant/{Occurrences,Consistency,ShapeConsistency,CompletionBridge,Template,Resolved,
+PlanSchema,OutputPlan,Compile,LoweringCorrectness,S1Proofs}.lean; Tests/Plan*.lean;
+scripts/check.py and scripts/proof_audit.py; lakefile.toml.
+
+Ran:
+- python3 scripts/check.py: exit 0. Output is in .lake/review5/check.out.
+- Each Tests/Plan*.lean, by hand, to read its actual error message.
+- `lake build Example.Tenant.S1Proofs` on the tree after it changed: succeeds.
+- Two probes in .lake/review5/: OutputShape.lean, and GeneralBody.lean, which was abandoned.
+No implementation file or earlier report was edited, and no agents were started.
+
+CHANGES DURING THE REVIEW (this report covers the final state)
+t17 made these edits while the review was in progress, in response to my interim B1 finding:
+- Output.object now accepts `body : TenantGraph s childInputs _` for any input list. Before, it
+  required [Model s child, Principal].
+- S1Proofs adds preloadedBody, preloadedOutput, vectorExample and
+  precomputed_results_reach_output.
+- proof_audit.py now rejects theorem names containing an apostrophe or a dot, and self-tests both.
+On the final tree I rebuilt Example.Tenant.S1Proofs (it succeeds) and ran the proof_audit
+self-test (it passes). I have not rerun full check.py since these edits; t17 will run it.
+
+VERDICT: S1 NEARLY CLOSES. ONE NARROW CLOSURE CONDITION REMAINS (B1, A STRONGER WITNESS); EVERYTHING ELSE IS NON-BLOCKING.
+The core semantic guarantees are real, universal and checked against independent targets:
+- compile_correct holds for every typed pure backend, including backends that return errors, and
+  every argument-error choice.
+- resolved_denotation reaches the unchanged S0 evalFields.
+- planned_response_eq, planned_authorized and planned_conforms compose these with the universal
+  S1a theorems eval_authorized and eval_conforms. Neither S1a theorem has a well-formedness premise.
+- Concrete compiled responses equal S0's expected success, nullable-bubbling and root-bubbling
+  responses by rfl, so the chain is not vacuous.
+
+INDEPENDENCE OF THE S0 SPECIFICATION
+Checked against file timestamps; there is no git history to diff against.
+- Model, Selection, Response, Evaluation, Authorization, Conformance and S0Proofs were last modified
+  on Nov 4, at or before 22:31. That was the S0-closure follow-up, before S1 began.
+- S1a adds new files and redefines nothing. compile and denoteResolved never call EvalSpec.
+- EvalSpec, AuthTree and Conforms are not defined through any plan type.
+- denoteResolved reuses S0's response vocabulary (Spec.fail, Spec.boundary, pair). That is
+  acceptable: only the target, EvalSpec, has to stay independent.
+- Occurrences.lean adds FirstOwned, its converse firstOwned_lookup, and lookupOccurrence_none_iff,
+  as the roadmap requires.
+
+======================================================================
+S1 BLOCKER
+
+B1. The S4b rewrite target must be representable, and nothing yet shows that it is.
+(roadmap L328-339; OutputPlan.lean:59-63; Compile.lean)
+At the start of this review, Output.object fixed each child body's input to
+[Model s child, Principal]. Every value an output plan reads at the task level therefore had to be
+computed inside the task body, from the task row and the principal alone. A Task.project outcome
+loaded once over the gathered task rows and scattered back could not reach the output. The
+execution half (fromLists, gather, vectorLoad, scatter, each with captures) could express the
+rewrite, but the output half could not. S4b would then have had to change the S1 output syntax,
+which the roadmap forbids (L338-339: "No syntax ... is added by the rewrite slice").
+Probe .lake/review5/OutputShape.lean shows the earlier signature rejecting a task body whose row
+carries a precomputed outcome.
+
+Status on the final tree: the type obstacle is gone, the build succeeds, and
+precomputed_results_reach_output shows that a value loaded outside a child body can reach that
+body's output plan. That part of B1 is resolved. The witness is still too weak to show that the
+S4b arrangement can be represented:
+- It covers `projects { title }`, with a single level and a single parent. The graph wraps every
+  row in one outer list, so the gather has one parent.
+- It never uses scatter. Results come back through `materialize.toList`, and the child body
+  receives only the outcome, not the row and outcome together.
+- In the Checks snapshot the caller owns one project, so the gathered vector has length 1. A
+  reordering or wrong-parent mistake would still produce the same response, so the rfl proves only
+  that the types fit, not that coordinates are handled correctly.
+- The root `projects` value is a `map` over rows supplied as graph input. It is not a Projects
+  call.
+
+Fix (closure condition; small and rfl-checkable):
+Add a second witness of the actual S4b shape, `projects { tasks { project { id title } } }`, over
+a fixture snapshot with at least two owned projects. Their task lists should differ in length,
+include one empty list, and include a duplicated project target. The plan should:
+  1. compute each project's task rows in an outer region, then apply fromLists and gather (two
+     parents),
+  2. issue one vectorLoad of Task.project,
+  3. scatter the results back to (project, position),
+  4. zip them into rows of the form (project, tasks outcome, List (task, Task.project outcome)),
+  5. run the project and task bodies over those rows, so the task body reads Task.project from its
+     input.
+Prove that its rendered response equals plannedResponse (the compile output) on that snapshot. A
+version for all backends remains S4b work. Also add a short comment on Output.object saying why
+the body input is arbitrary.
+
+AUDIT CHANGE (verified): the theorem-name pattern now requires whitespace or one of `(`, `{`, `:`
+after the name. A name containing an apostrophe or a dot is therefore not counted as discovered,
+the header count no longer matches, and discovery fails closed. Both cases are self-tested.
+
+======================================================================
+SHOULD FIX IN S1 (small; not closure conditions)
+
+M1. Graph call nodes never pass through the Call/Answer family. (Graph.lean:80-87, 112-116;
+CallDenotation.lean)
+Node.call and Node.vectorLoad apply `meanings` directly. denoteCall, Contracts.Pre/Post and
+call_contract are never connected to the graph. S3 contracts and the S4 interpreter will issue Call
+values, so the link should be fixed in S1, where it is cheap.
+Fix: prove
+  denoteNode (.call f t p a) v = denoteCall m (.one f (t.read v) (p.read v) (a.read v)), and
+  (denoteNode (.vectorLoad f t rows) v).materialize
+    = denoteCall m (.batch f (t.read v) ((rows.read v).materialize))   (up to the length cast).
+The second gives Call.batch a positional meaning in terms of RowIndex. This is the interface that
+S4b's matching theorem has to use.
+
+M2. The "semantic counterexamples" are tautologies. (S1Proofs.lean:56-64)
+reordered_scatter_rejected and wrong_parent_rejected rewrite with gather_scatter_lists and decide
+on concrete lists. They hold for any function equal to the identity, and say nothing about a wrong
+reconstruction. The acceptance criterion (L399-401) is meant to show that the laws exclude bad
+implementations.
+Fix: define a coordinate-free reconstruction, for example chunking a materialized list by reversed
+widths, or by the widths of the wrong parent. Prove that it falsifies the statement of
+scatter_gather on a duplicate/empty fixture: ∃ rows, bad (gather rows) ≠ rows. Do the same for a
+key-order-dependent matcher.
+
+M3. The status file overstates how generic output reconstruction is. (s1-status.adoc "S1a" and
+"S1b"; OutputPlan.lean)
+- appendField and completeRows round-trip through GraphQL.Plan.Completion.
+- renderSingle and renderBranch call Spec.boundary and Spec.fail directly.
+- The output plan type is tenant-specific: Output is indexed by IR.Leaf and IR.Branch in
+  Example.Tenant.
+Only the execution graph and the row algebra are generic. That is enough for a narrow P1 slice
+(L396), but the status should say so.
+Fix: correct the wording, and either route boundary and failure through Completion.boundary
+(completion_boundary already exists) or drop the claim. Record the generic output plan as S2a/S4
+work (see Later Scope).
+
+======================================================================
+LOW
+
+L1. Fixtures match only the generic text "Type mismatch". (check.py) I read every actual error,
+    and each fails for the intended reason. A future typo would still pass. Pin a distinguishing
+    substring for each fixture, such as "OutputRef secondGraph", "Vector", "FieldId otherSchema" or
+    "Ref [] Nat".
+L2. PlanForwardReference uses `Ref [] Nat := .here`, which is a reference into an empty context,
+    not a forward reference inside a graph. Add a fixture in which a snoc node reads an index
+    beyond its prior context.
+L3. mapRows has no denotation law; gather, scatter and vectorLoad each have one. Add a pointwise
+    law, (scatter (mapRows ...)).values i |>.get j = body-result at row (i,j).
+L4. The gatherNested/scatterNested composition laws in Rows.lean are separate definitions,
+    unconnected to the gather node. One gather over fromLists already keeps both coordinates (the
+    project and the task position), which is all the S4b wave needs. Either state that, or prove
+    gather (Nested.ofLists ...) agrees with gatherNested under flattenIndex.
+L5. PublicError and FrameworkError are duplicated in GraphQL.Plan and Example.Tenant, with
+    constructors in a different order. Prove that errorCode and frameworkCode are inverses on
+    framework errors, or reuse one definition.
+L6. omitted_is_not_null is only a constructor inequality. No P1 field takes an optional input, so
+    the omitted-versus-null acceptance item is met only at the type level. That is fine for P1;
+    the real test is S5's coercion.
+L7. Since S0, several S1 theorems (row fixtures, gather_scatter_denotation) depend on
+    Classical.choice through simp lemmas. The audit allows it, and it does not weaken the
+    guarantees. Keep the list of allowed axioms as it is.
+
+======================================================================
+LATER SCOPE: record it, but it does not block S1
+
+S2a
+- Carriers depend on the snapshot: models s uses Occurrence s.projects and Occurrence s.tasks. The
+  tenant plans and backends are therefore indexed by one snapshot. External or IO backends (S2a
+  bindings, S6) need carriers that are not occurrences of a pure snapshot. The status file says so;
+  S2a should fix the carrier interface before BindingsByField freezes.
+- The scope token is Principal. That fits the roadmap's request-context rule (no records
+  captured). The batch-capability slot and key sufficiency (closure C1/C2) remain S2a/S4b work.
+
+S3
+- Rows carry no ownership in their types. Region rows are plain Occurrence values, and frame
+  brands are freely constructible (`⟨v⟩ : Frame g`); the status file acknowledges this. In S1 the
+  guarantees come from exactness against the verified compiler, which is sound. S3's node/row
+  contracts must supply the owned-row invariant. Graphs written outside the compiler may use
+  arbitrary `map` functions and have no guarantee.
+
+S4
+- The interpreter must prove the each/gather/scatter/vectorLoad/mapRows forms, using M1's bridge.
+- A generic output plan is needed before a second application (S8). Otherwise each application
+  re-proves render.
+
+S4b
+- Deduplication, chunking, eligibility, key sufficiency, counting all primitive calls, and the
+  for-all-backends version of B1's fixture.
+
+======================================================================
+CRITERIA COVERAGE (roadmap L396-402)
+- Narrow P1 plan and output representation: met (Graph, Output).
+- Total denotation without fuel: met (structural mutual recursion; no fuel parameter).
+- Two lowering proofs: met. Selection to IR is lower_sound, lower_complete and
+  resolved_denotation; IR to plan is compile_correct.
+- Universal S0 consistency: met (eval_authorized, eval_conforms).
+- Negative fixtures: all seven present, and each fails for the intended reason (L1, L2).
+- Semantic counterexamples: present but tautological (M2).
+- Finite nested project/task plan preserves S0's success and bubbling results: met (rfl
+  fixtures).
+- Composition of one-level gathers and scatters: index and value laws exist, not connected to
+  the graph (L4).
+- Transformed S4b plan representable: the type obstacle is removed and a single-parent witness
+  exists. A two-parent witness that uses scatter is still missing (B1).
+
+ORDER OF ACTION
+1. Rerun check.py on the current tree.
+2. B1: add the two-parent nested witness that uses scatter (closure condition).
+3. M1-M3 in the same pass if they are cheap, as recommended.
+4. Leave L1-L7 and Later Scope to the slices named.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s1-claude-review.txt

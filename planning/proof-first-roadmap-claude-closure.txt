@@ -1,0 +1,97 @@
+CLOSURE ASSESSMENT: planning/proof-first-roadmap.adoc (revised)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-03. Plan review only.
+Read in full: the revised roadmap and proof-first-roadmap-review-resolution.txt, checked against
+proof-first-roadmap-claude-review.txt. Nothing was built or run, so feasibility remains unproved,
+as the resolution note itself says. I compared the two files for substance. I did not diff the
+original critique, so "preserved unchanged" is as you reported it.
+
+VERDICT: ONE SMALL BLOCKER, THEN S0 CAN BEGIN.
+All fourteen findings are addressed. B2-B7 and H1-H7 are closed. B1's four defects are closed, but
+the new text leaves one gap in the same definition (C1). It is a short wording decision, not a
+redesign. The six items after it attach to later gates and do not hold up S0.
+
+REMAINING BLOCKER
+
+C1. AuthTree has no fixed operation domain, and "instance" undercuts its independence.
+(L61, L194, L228-232, L277, L525-526; order S0 then S1)
+Two connected problems:
+ a. S0 defines AuthTree p snap op tree and EvalSpec, but the only operation form is S1's IR, which
+    does not exist yet. Defining them on the IR would also make the IR part of the specification.
+    The roadmap then has two meanings, S0's EvalSpec and S1's "independent IR denotation", with
+    no stated link.
+ b. L277 calls AuthTree an instance of the generic judgment, and L526 says that judgment is
+    specialized to AuthTree. Taken literally, reading the theorem then requires reading a framework
+    whose completion rules were shaped by the executor. That conflicts with L61 and reopens B1's
+    independence requirement.
+Correction, two sentences:
+ - S0 defines a small first-order P1 selection type, PSelection (field name, literal arguments,
+   children, no IR features), and states AuthTree, Conforms and EvalSpec over it. S1 proves that
+   the IR denotation agrees with EvalSpec on lowered PSelections.
+ - AuthTree stays a hand-written S0 inductive. The generic judgment is instantiated with tenant
+   rules, and S4 proves GenericJudgment(tenantSpec) -> AuthorizedResponse. The list-bound example
+   follows the same pattern.
+Change L277 and L526 to match. After S5, the same lift applies through PlanDenotes.
+
+FINDING STATUS
+B1 CLOSED except C1. Membership by occurrence, per-field leaves, ghost evidence and the three
+   counterexamples are all specified. L74-79 now claims the correct scope, and implicit flow is
+   ruled on.
+B2 CLOSED. Sat is correctly defined, and L304-305 states why the closure rules out a step invariant.
+B3 CLOSED. driveCertified's schematic type is sound: structural on Machine, valid in any monad,
+   with Pre correctly supplied to the backend. Early branches take no snapshot by signature, and
+   certificates are indexed by the concrete principal and snapshot.
+B4 CLOSED. Closure laws and the items(first:) instance at S4 test whole-list properties early.
+B5 CLOSED. BindingsByField plus a generator mutation that swaps both sides is the right test.
+B6 CLOSED. The profile table is consistent with the outcome text; the aliases claim is gone.
+B7 CLOSED. Universal success, bounded completeness, arbitrary-snapshot safety and the explicit
+   definition of "admitted" are all present.
+H1, H2, H3, H4, H5, H6, H7 CLOSED. See N2 for one residual on H6.
+R1-R5 ADOPTED. The resolution note describes them accurately; for R2 see N1.
+
+The IO position is sound as stated: relative to the captured value, with no claim of database
+verification. An external database has no in-memory snapshot to name, so its Post needs a separate
+snapshot model. Until then it stays outside the certified path, as L143-144 already says.
+
+NON-BLOCKING REFINEMENTS, by gate
+
+N1. S1/S4: the shipped fuel must meet the sufficient bound.
+L328-331 proves success under sufficient fuel, and L340 says the compiled entry is the same
+definition. If the entry keeps a constant (256 at Execution.lean:76), the universal gate is false
+for deep operations at the shipped entry. Compute fuel from the IR, or make WithinLimits imply the
+bound.
+
+N2. S1: separate framework errors from application errors.
+Unavailable and BadLimit belong to different applications, but the executor itself emits
+exhaustion, argument and internal failures. If PublicError is one type, the second instance
+inherits tenant errors, which conflicts with L298. Parameterize the executor by an application
+error type plus a fixed framework error set.
+
+N3. S1: state whether the core sees guards.
+L185-186 and L229 put runtime guards in the IR, while L234-238 describes instantiation with
+variables, after which ordering by first enabled occurrence is already resolved. Name the two
+levels: a variable-parametric template, and an instantiated guard-free IR that the core executes.
+Otherwise the core keeps merging logic that L231 moved out. L279's mention of merging as a closure
+law should follow whichever is chosen.
+
+N4. S4: include a fallible argument path in the core now.
+L386 needs argument failure to take the field-error path, but P1 typed literals cannot fail. If
+the core has no such branch, S5 reopens the S4 theorem.
+
+N5. S0: make EvalSpec total, including failures.
+Under arbitrary snapshots the success theorem does not apply, so only examples pin down failure
+behavior; an executor adding spurious Unavailable there could still satisfy safety, depending on
+AuthTree's failure rule. A total EvalSpec, or AuthTree failure rules requiring a real missing target,
+closes this. The view theorem needs the same totality.
+
+N6. S3/S4: state proofs over adapters satisfying agreement, not over the manual terms.
+L355 instantiates them with generated artifacts without re-proving, which only works if S3/S4
+depend on the agreement interface.
+
+RECOMMENDED ACTION
+Apply C1 to the roadmap, then start S0. Take N5 in S0 as well, since it costs little there. Carry
+N1-N4 and N6 as entry notes for their slices.
+
+No roadmap or implementation file was edited, and no agents, tools or tests were run beyond
+reading files.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/proof-first-roadmap-claude-closure.txt

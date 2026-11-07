@@ -1,0 +1,122 @@
+S1 / GRAFAST ROADMAP REVIEW: planning/proof-first-roadmap.adoc (revision 2026-11-04)
+Reviewer: Claude (Opus 5.5). Date: 2026-11-04. Plan review only; nothing was built or run.
+Read: the whole roadmap, with the S0 Lean modules as reviewed at S0 closure for context. I did not
+fetch the Grafast documents; architectural references here rely on the roadmap's own description.
+
+VERDICT: S1a MAY BEGIN NOW. S1b-S1d NEED TWO CORRECTIONS BEFORE THEIR TYPES ARE FIXED.
+The direction is sound and well bounded. It keeps execution and output plans separate, makes the
+graph structurally acyclic with typed references, gives batches typed cardinality but requires a
+separate matching theorem, declines to extract graphs from Machine continuations, and limits S4b to
+one rewrite with an exact-equivalence target. The S4b scoping and the exclusions at L499-503 and
+L871-872 are the right size.
+Two representation choices in S1 decide whether S4b can be added without reopening S1-S4 (B1, B2).
+Three statements need tightening (H1-H3). S1a depends on none of this and is fully specified.
+
+BLOCKERS: fix before S1b/S1c representations are frozen
+
+B1. The batched form must be representable in the S1 plan language, not added by S4b.
+(L304-309, L311-315, L493-497)
+The S4b rewrite lifts task lookups out of the nested per-project region into one load over the
+flattened rows of that region, then scatters the results back. If S1 defines only per-item `each`
+regions, the rewrite target cannot be expressed. S4b would then change the plan syntax, its typing,
+ExecutionDenotes, the output-plan remapping, the S4 interpreter and its Sat proof, at the slice
+meant to be a narrow addition.
+The text is also inconsistent about who owns these laws. L308-309 reserves batch laws for S4b, but
+S1d (L338) and its acceptance (L356) already require flatten/reconstruct laws with duplicate keys
+and wrong-batch-length fixtures.
+Correction: split the primitives explicitly.
+ - S1 defines and proves the structural forms: gathering a nested region's rows into an
+   n-indexed vector with a row-provenance map, a pointwise vector map, and scattering back to
+   parent rows and positions. Their denotation laws are part of S1d. The planner does not yet emit
+   these forms for P1.
+ - S4b adds deduplication, chunking and the batch-load primitive, the eligibility predicate, and
+   the rewrite itself.
+Then "wrong batch lengths" and "duplicate keys" at L338 and L356 refer to S1's structural forms,
+and the S4b proof is a rewrite over existing syntax.
+
+B2. Reserve the batch call in the S1 Call/Answer family now. (L240-245, L589-591)
+S1 defines Call as one field on one parent, with an answer type depending on the field. S4b needs a
+call whose answer is Vector (Outcome A) n, and S6 requires it to pass through the same certified
+backend interface. Adding a Call constructor after S3/S4 changes the quantification of Pre/Post,
+the Sat proofs, the generic bridge and the S2b adapter interface.
+Correction: S1's call family includes a batch form indexed by n, with a fixed contract shape
+(the batch postcondition is the pointwise single-call postcondition at each position). The planner
+and backends may leave it unused until S4b. S2a's binding interface should likewise allow an
+optional batch implementation per field. Otherwise the S4b loader is bound outside the
+independently anchored BindingsByField family, which reopens B5 from the original review.
+
+HIGH: tighten in the text; not needed for S1a
+
+H1. State which proof route yields which theorem in S4. (L433-439, L453-457, L714-719, L739-741)
+S1 now gives OutputDenotes(ExecutionDenotes) = SelectionDenotes = EvalSpec, and S1a gives
+ValidOperation -> AuthorizedResponse(EvalSpec). Once S4 proves the sequential interpreter equal to
+plan denotation for the pure backend, authorization for that backend follows by rewriting. The
+generic Sat judgment and its separate AuthTree bridge are needed only where exactness fails:
+arbitrary fuel, injected or IO faults, and external backends through driveCertified in S6. The
+roadmap currently asks for both routes for the same pure-backend theorem.
+Correction: pure-backend authorization and conformance come from exactness plus S1a. The generic
+route covers fault and partial-execution safety and S6. S3's contracts must also be stated over
+plan nodes and region rows, not parent-object resolver calls. Each node's per-row value carries
+the invariant that the output plan consumes. That is the realistic interface once execution is a
+DAG.
+
+H2. The S4b equivalence theorem is ill-typed for effectful backends. (L514-517, L721-723)
+observe(run(rewrite)) = observe(run(original)) under BackendRefines cannot be stated when run is
+effectful, because IO results cannot be compared.
+Correction: state equivalence for any deterministic backend function whose batch call equals the
+pointwise single calls, with the pure snapshot backend as the instance. An external adapter
+inherits only certificate-level safety, through S6's typed batch postcondition. The request bound
+is likewise a theorem about the counted Machine run for given answers, not about IO.
+
+H3. Who constructs plans? (L322-325 against L347, L417-419)
+L324 says "Authors construct the restricted plan language", but S1d and S4 produce the plan by
+lowering, with one field-call node per selected field. Grafast's distinguishing feature, plan
+resolvers written by authors, is therefore not in S1-S4b.
+Correction: say so. In S1-S4b plans are produced only by the verified lowering. Author-written plan
+resolvers, which a user wanting Grafast-style programs would expect, are a named future extension.
+They need their own obligation, that each author plan denotes its field's meaning. Without this
+statement, "Grafast-inspired" overstates the user-facing model.
+
+MEDIUM AND LOW
+M1. Fuel may be unnecessary. (L435, L449-453, L739-745) Graph traversal is structural, and regions
+    iterate finite runtime lists, so a structural interpreter needs no fuel. Decide this in S1. If
+    fuel is dropped, delete the sufficient-fuel premises and the exhaustion bound rather than
+    carrying vacuous ones; keep framework exhaustion only for IO limits.
+M2. Output remapping. (L336-337) Use order-preserving context embeddings, the standard technique
+    for intrinsically typed syntax, rather than ad hoc index remapping. Rewrite proofs then reduce
+    to renaming lemmas. Keep this as a recommendation, not a requirement.
+M3. Define "region" for the request bound. (L521-524) The batched lookup spans all rows of the
+    projects region in one dependency wave. Define U as the distinct (scope, id) keys over that
+    wave's flattened rows, so the bound counts per wave instance, not per project row.
+M4. Size of S1. S1 now covers the consistency theorem, four representations, region typing,
+    structural vector laws, two lowering proofs and negative fixtures. Gate it internally (S1a, then
+    S1b-c types plus fixtures, then S1d proofs) so S2a can start on the typed call family early.
+L1. Stale or inconsistent text.
+    - L200 is an overlong line.
+    - L544 says "the S4 IR"; it should say the resolved selection IR.
+    - L703 writes OperationPlanDenotes (plan ir) ir, but L717 writes OperationPlanDenotes
+      operationPlan selection; pick one argument type.
+    - L17 and L19-23 describe the review state and should be updated after this review.
+
+WHAT IS ALREADY CORRECT AND SHOULD STAY
+- Fetch identity and output identity are distinct types. A shared computation keeps per-occurrence
+  boundaries and paths (L292-295), and the S4b proof requires shared failures to reappear at each
+  position (L510-511).
+- Vector cardinality is not treated as proof of key matching (L312-313). Whole-batch transport
+  failure is not counted as per-key equivalence (L515-517).
+- Each batch is scoped to one principal, snapshot, backend and argument set. There is no cache
+  reuse, and no same-key shortcut (L317-320, L499-503).
+- The bound ceil(U/B) is conditional on one request per primitive and no retries, summed over
+  regions, with a workload showing it is strictly smaller and a benchmark only corroborating it
+  (L520-526).
+- S1a has an exact statement, an independent target, and no executor dependency.
+
+ORDER OF ACTION
+1. Start S1a now: the consistency and conformance theorems, the occurrence converse/none lemmas,
+   error parameterization, and audit discovery.
+2. Edit the roadmap for B1 and B2 before writing the S1b/S1c types. Apply H1-H3 in the same edit.
+3. Treat M1 as an S1 design decision, and M2-M4 and L1 as the slice proceeds.
+
+No roadmap or implementation file was edited. No tests or agents were run.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s1-grafast-claude-review.txt

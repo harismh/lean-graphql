@@ -1,0 +1,48 @@
+DOCUMENTATION 2.0 DRAFT CLOSURE
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Checked against: planning/docs-2.0-claude-review.txt (M1, L1-L7), which is preserved.
+Files changed since that review (by timestamp): README.adoc and
+planning/release-2.0-draft.adoc only.
+
+What I checked:
+- I read the edited passages in both files.
+- I re-extracted all four [source,lean] blocks (three in the README, one in the release
+  draft). Each compiles with `scripts/lake env lean`, with no errors.
+- I re-resolved every link: target in both files. None are missing.
+No full suite was run, as requested. No other file was edited.
+
+VERDICT: APPROVED. The README and the release draft are accurate against the S6 closure and
+appropriately scoped. No blocking documentation issues remain.
+
+ITEM STATUS
+M1 RESOLVED for draft purposes.
+   - The title is now "lean-graphql — 2.0 direction (release draft)".
+   - The draft states that "2.0" is a working name, not a published semantic version, and
+     that numbering must be chosen before publication. The package stays at 0.0.1, with
+     no tag.
+   - The decision itself remains with the maintainer at publication time.
+L1 RESOLVED. In both files the tagline reads "Proof-oriented GraphQL framework in Lean 4",
+   with no period. It is still bold, which is fine.
+L2 RESOLVED.
+   - run_authorized is introduced as "one link in that chain: the theorem for the
+     deterministic in-memory runtime".
+   - GoodReply (CertifiedHandler.lean) is linked as the composed guarantee for the
+     optimized, effectful handler.
+L3 RESOLVED. "Separate fault-contract proofs cover permitted resolver faults."
+L4 RESOLVED. Both files distinguish the 30 certified-route checks from the 35 legacy
+   regression checks.
+L5 RESOLVED. Batching is scoped to the recognized `projects → tasks → project` shape with a
+   keyed capability. Other shapes use reference execution.
+L6 RESOLVED (optional item taken). The release notes state that encoding is proved against
+   an independent grammar, and that a decoder round-trip and grammar injectivity are not
+   yet proved.
+L7 RESOLVED. The table now reads "execution of checked plans agrees with independent
+   semantics" and "Machine-call counts".
+
+COSMETIC (optional; not required for approval)
+- README.adoc around line 53: "[handler guarantee, `GoodReply`], composes" has a stray comma
+  before "composes".
+- README.adoc around line 152 and release-2.0-draft.adoc around lines 70-71 have uneven line
+  wrapping after the edits. This does not affect rendered AsciiDoc.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/docs-2.0-claude-closure.txt

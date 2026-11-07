@@ -1,0 +1,179 @@
+S2a IMPLEMENTATION REVIEW: independently anchored schema bindings
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: proof-first-roadmap.adoc S2a (L409-440), plus its S3/S4/S6 dependencies, and
+planning/s2a-status.adoc.
+
+Read:
+- GraphQL/Plan/{SchemaEvidence,Bindings,Conversion}.lean
+- Example/Tenant/{Schema,Bindings,BindingBridge,S2Proofs}.lean
+- Tests/TenantSDL.lean and Tests/Binding*.lean
+- The check.py additions, scripts/benchmark_s2.py and planning/s2a-benchmark.json
+- GraphQL/Schema.lean (ValidCore)
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s2a.out:
+- 228 audit reports: 223 discovered theorems plus 5 existing. Only the allowed axioms appear.
+- All 17 expected compile failures pass.
+- The tenant SDL test passes.
+I did not rerun the benchmark. No implementation file was edited, and no agents were started.
+
+VERDICT: S2a MAY CLOSE. EVERY S2a ACCEPTANCE ITEM IS MET.
+- One high finding (H1) must be decided before S3 fixes its contract carriers. It is an S3 entry
+  condition, not an S2a blocker.
+- M1 and M2 should be fixed before S2b generates anything.
+The stated limitations are accurate:
+- SDL parsing is tested by regression, not proved.
+- The manual batch is a pointwise loop, with no reduced-call claim.
+- Records are not ownership evidence.
+- The S4 runtime is not built.
+
+WHAT HOLDS
+- Canonical identity. CanonicalField is a Fin over the AST's own field list. CheckedIndexed.field
+  and CheckedIndexed.coordinate round-trip definitionally. canonical_field_represents gives name,
+  argument-encoding and output agreement at each coordinate. Represents checks the root name,
+  field counts per object, and each field coordinate, all in AST declaration order. ValidCore
+  supplies unique type and field names. same_typed_schema_swap_rejected and the
+  BindingSwappedSchema fixture show that swapping id and title in the artifact fails at kernel
+  level.
+- Adapter agreement includes the batch slot. BindingAgreement is equality of the whole
+  FieldBinding: single implementation, optional BatchCapability, and its optional SufficientKey.
+  BatchCapability and SufficientKey are indexed by that field's `single` function, so attaching
+  a capability to a different backend is a type error (BindingWrongBackend). A constant key
+  cannot prove `sufficient` (BindingInsufficientKey), and constant_key_cannot_be_sufficient
+  refutes it semantically. batch_slot_preserved and batch_and_key_are_anchored hold by rfl on the
+  actual record.
+- Exactness is separated from cost. BatchCapability.exact is pointwise equality with `single`.
+  answer_binding_exact shows that capability and fallback both equal denoteCall, and the comments
+  and status disclaim any physical-cost claim. That matches the roadmap (L425-427): a pointwise
+  loop gives no reduced-call bound.
+- Key scope. The key is sufficient for any two parents under the same request.
+  equal_keys_do_not_allow_cross_request_reuse shows the same key with different outcomes across
+  requests. Request bundles the snapshot and principal at execution, and no records are captured.
+- Universal bridge. binding_agrees_s1 holds for every snapshot, principal, canonical field,
+  occurrence parent and argument. The actual adapter, on transported carriers, equals the S1
+  occurrence meaning converted through mapModels. The proof covers lookup through first-owned,
+  filtering, the task filterMap, and the unavailable error. Because S1 meanings are anchored to
+  S0 by name (leaf_identity and branch_identity, through resolved_denotation), this is the
+  non-circular semantic anchor for S2a.
+- Conversions. mapModels identity, successful and error outcome conversion, argument-record,
+  public-error and outcome round-trips, and presence and input round-trips. The closed error type
+  has no private-string slot.
+
+======================================================================
+HIGH: S3 entry condition (not an S2a blocker)
+
+H1. The verified S1 compiler and the S2a bindings use different carriers and scope tokens.
+(Example/Tenant/Compile.lean, OutputPlan.lean, PlanSchema.lean against Bindings.lean)
+compile, Output, render, branchRows, leafString and compile_correct are all stated over
+TenantGraph s = Graph schema (models s) Principal ApplicationError, with snapshot-occurrence
+carriers and a Principal token. The application's bindings use record carriers (Unit, Project,
+Task) and a Request token. The generic Graph can take either, but the verified tenant compiler
+produces only occurrence/Principal plans. A plan the S4 interpreter could run against the actual
+bindings has no compile_correct. binding_agrees_s1 is a field-level bridge only. Lifting it to a
+whole plan needs either a parametric compiler or a plan-transport lemma, and neither exists.
+S3 contracts are to be stated "for any adapter satisfying that interface" (L468-470), so S3
+inherits this choice.
+Fix: before S3 fixes its contracts, choose one of two routes.
+(a) Recommended. Make compile, Output and render parametric in carriers and scope:
+    - models : Fin 3 → Type, with field meanings supplied through the Meanings argument;
+    - a row-extraction function per branch;
+    - a token type instead of Principal.
+    Keep compile_correct universal. Then prove a transport theorem: for any field-level
+    conversion satisfying binding_agrees_s1's equation, the planned response over record
+    carriers and Request equals the planned response over occurrences and Principal. Then
+    planned_response_eq carries over to the actual bindings.
+(b) Prove a generic plan-transport lemma: a Graph and Output over models A map to models B along
+    a carrier map, and denotation commutes when the meanings commute pointwise. Instantiate it
+    with transport.
+Either route should end in one theorem, stated for any request ⟨s, p⟩ and any valid P1
+operation: the response of the plan over actual bindings equals EvalSpec. S4 then has to prove
+only that its interpreter equals plan denotation.
+
+======================================================================
+MEDIUM: fix before S2b generation
+
+M1. Argument identity is not part of the canonical identity. (SchemaEvidence.lean:6-20, 49-51;
+Plan/Schema.lean FieldDecl)
+argumentsEncoding encodes only argument types, in source order. FieldDecl has no argument names,
+and Represents never compares them. Take a field with two arguments of the same type,
+f(from: String!, to: String!). A generated argument record whose pack/unpack swaps them still
+passes Represents. Its round-trip laws (pack ∘ unpack = id, as in arguments_roundtrip) also hold
+for the swap. This is the argument-level version of the same-typed swap the roadmap excludes
+(L434-438: "invokes that designated implementation on the correctly translated arguments").
+- The tenant has one argument, so no current proof is wrong.
+- The status file claims "multiple arguments represented in source order as products", but no
+  test or benchmark workload has a field with more than one argument. The mixed profile has only
+  label(value:).
+Fix:
+- Carry argument names, or an argument layout, in FieldDecl or in IndexedSchema, and check them in
+  FieldRepresents.
+- State argument translation against AST argument coordinates. The argument record's
+  projection for coordinate k must equal component k of the encoded product.
+- Add a two-argument fixture of the same type with a swapped pack, and prove it is rejected.
+- Add a field with several arguments to the mixed benchmark.
+
+M2. The BindingAgreement target is not independent of the adapter's own constants.
+(Bindings.lean:155-170, 186-191; S2Proofs swapped_adapter_rejected)
+independentBindings and `application` are built from the same named wrappers (projectIdBinding,
+projectTitleBinding, and so on). swapped_adapter_rejected catches a swap in the record. A swap
+inside a wrapper definition, such as projectIdBinding := ⟨toOutcome ∘ resolveProjectTitle, …⟩,
+would change both sides identically, and BindingAgreement would still hold. Only
+binding_agrees_s1 catches that, which is the right anchor. In S2b, the wrappers are what the
+generator would emit, so a target built from them is not "supplied independently of adapter
+generation" (L439-440).
+Fix:
+- Define independentBindings directly from the user's resolve* functions and the fixed
+  conversions (toOutcome, packArgs), or state it at the level of the S1 meanings.
+- Name binding_agrees_s1, or its parametric successor from H1, as the S2a/S2b acceptance
+  judgment.
+- Add a fixture in which a swap inside a wrapper makes binding_agrees_s1 false. For example,
+  prove that adapt swapped violates binding_agrees_s1's equation at Project.id on a concrete
+  occurrence.
+- State in s2a-status.adoc that BindingAgreement is a dispatch/slot check and binding_agrees_s1
+  is the semantic anchor.
+
+======================================================================
+LOW
+L1. swapped_metadata_cannot_help takes an unused argument `_metadata : Nat → Nat`, so it shows
+    nothing beyond swapped_adapter_rejected. Remove it. Alternatively, state that the generated
+    metadata is a parameter of an adapter constructor and agreement fails for every value of it.
+L2. The benchmark evidence is thin for a generator decision.
+    - Each workload ran once.
+    - The large workload is scalar-only: no arguments, no object references, and a constant
+      `indexed` function rather than a 300-case match.
+    - RSS grows from about 1.35GB (imports) to 5.57GB, roughly 1.4MB per field.
+    Before committing S2b, try per-object certificates (Represents decided for each owner, then
+    combined). Add a workload with object references and arguments, and repeat each run at least
+    three times.
+L3. BatchCapability and FieldBinding are pure, which is right for the deterministic backend in
+    S3/S4/S4b. An S6 external batch backend gives postconditions only, through driveCertified, and
+    cannot satisfy `exact`. Record that S6 needs a separate effectful certified batch interface.
+    It must not be weakened into this slot.
+L4. The parser boundary (Tests/TenantSDL.lean, which uses #eval equality) is correctly described
+    as a regression check, not a theorem. Keep the kernel certificates starting at demoAst, as
+    now.
+
+======================================================================
+LATER SCOPE (recorded; not S2a)
+S3
+- Node and row contracts. Record carriers are forgeable, and ownership has to come from contracts
+  over rows produced by the plan. That depends on H1.
+- tenantResolvers_satisfy_contracts, lifted through the adapter interface.
+S4
+- The interpreter over the actual adapter (answerBinding) and a generic output path.
+S2b
+- Generation of the record, the adapter, the certificates and the argument layout from M1.
+- The target from M2 must stay outside generator output.
+S4b
+- A real batch strategy, with all primitive calls counted.
+S5
+- Coercion between omitted, null and value.
+S6
+- Effectful certified backends (L3).
+
+ORDER OF ACTION
+1. Close S2a.
+2. Decide H1, recommended route (a), before S3 states its contracts.
+3. Fix M1 and M2 before S2b, preferably together with H1.
+4. Take up L1-L4 when convenient.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s2a-claude-review.txt

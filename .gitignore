@@ -1,0 +1,22 @@
+# Lake dependencies, build products, test logs, and fresh benchmark reports
+/.lake/
+
+# Locally downloaded Lean toolchains and archives
+/.tools/
+
+# Disposable agent work; keep milestone reviews and closure evidence tracked
+/planning/scratch/
+/planning/transcripts/
+/planning/reviews/raw/
+
+# Lean artifacts produced by direct compiler invocations outside Lake
+*.olean
+*.olean.private
+*.olean.server
+*.ilean
+
+# OS metadata and editor temporary files
+.DS_Store
+*.swp
+*.swo
+*~

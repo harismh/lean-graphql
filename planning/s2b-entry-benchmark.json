@@ -1,0 +1,87 @@
+{
+  "scope": "Fresh kernel certificates, ordered two-argument layouts and recursive object-list outputs; no generation or execution. Per-object mode excludes composition; composition cost is not measured.",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "toolchain": "leanprover/lean4:v4.33.0",
+  "measurements": [
+    {
+      "exit_code": 0,
+      "seconds": 2.369,
+      "max_rss_bytes": 1441366016,
+      "name": "objects12_fields6_perobject0_run1",
+      "objects": 12,
+      "fields_per_object": 6,
+      "per_object": false,
+      "repeat": 1
+    },
+    {
+      "exit_code": 0,
+      "seconds": 0.985,
+      "max_rss_bytes": 1406091264,
+      "name": "objects12_fields6_perobject0_run2",
+      "objects": 12,
+      "fields_per_object": 6,
+      "per_object": false,
+      "repeat": 2
+    },
+    {
+      "exit_code": 0,
+      "seconds": 1.17,
+      "max_rss_bytes": 1435336704,
+      "name": "objects12_fields6_perobject1_run1",
+      "objects": 12,
+      "fields_per_object": 6,
+      "per_object": true,
+      "repeat": 1
+    },
+    {
+      "exit_code": 0,
+      "seconds": 1.144,
+      "max_rss_bytes": 1420771328,
+      "name": "objects12_fields6_perobject1_run2",
+      "objects": 12,
+      "fields_per_object": 6,
+      "per_object": true,
+      "repeat": 2
+    },
+    {
+      "exit_code": 0,
+      "seconds": 8.119,
+      "max_rss_bytes": 2891481088,
+      "name": "objects80_fields10_perobject0_run1",
+      "objects": 80,
+      "fields_per_object": 10,
+      "per_object": false,
+      "repeat": 1
+    },
+    {
+      "exit_code": 0,
+      "seconds": 8.261,
+      "max_rss_bytes": 2911010816,
+      "name": "objects80_fields10_perobject0_run2",
+      "objects": 80,
+      "fields_per_object": 10,
+      "per_object": false,
+      "repeat": 2
+    },
+    {
+      "exit_code": 0,
+      "seconds": 12.926,
+      "max_rss_bytes": 2939256832,
+      "name": "objects80_fields10_perobject1_run1",
+      "objects": 80,
+      "fields_per_object": 10,
+      "per_object": true,
+      "repeat": 1
+    },
+    {
+      "exit_code": 0,
+      "seconds": 13.264,
+      "max_rss_bytes": 2973597696,
+      "name": "objects80_fields10_perobject1_run2",
+      "objects": 80,
+      "fields_per_object": 10,
+      "per_object": true,
+      "repeat": 2
+    }
+  ]
+}

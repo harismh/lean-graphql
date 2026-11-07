@@ -1,0 +1,47 @@
+= S6: application proofs through response bytes
+
+Status: CLOSED, 2026-11-07. S6a through S6d are complete. Claude independently
+confirmed no blockers remain in link:s6cd-claude-closure.txt[final closure review].
+The initial link:s6cd-claude-review.txt[review] is preserved; its acquisition-contract
+blocker and caller-identity concern were resolved before closure.
+
+The P2 tenant program now carries evidence from decoded and checked inputs through
+optimized effectful execution to the bytes supplied to LeanIO. Its application
+property remains the original independent tenant-ownership judgment; encoding and
+transport integration extend that property instead of replacing it with schema
+well-formedness or a theorem about an arbitrary predicate.
+
+[cols="1,3,3",options="header"]
+|===
+|Slice |Implemented layer |Evidence
+|S6a |Certified effectful Machine driver |A backend supplies each dependent answer with its Post proof; the driver carries Sat to the result.
+|S6b |Actual optimized batching and permitted faults |Preparation, equal-key reuse, original-position reconstruction and child execution preserve independent authorization for every permitted answer.
+|S6c |Total ordered encoder |Independent character/number/JSON and response-envelope relations connect the authorized structured response to UTF-8 bytes.
+|S6d |Prepared/authenticated HTTP path |The authenticated core fixes the exact principal/snapshot; the route sends its certified bytes or a closed public failure.
+|===
+
+See link:s6a-status.adoc[S6a], link:s6b-status.adoc[S6b],
+link:s6c-status.adoc[S6c], and link:s6d-status.adoc[S6d] for individual scope and proofs.
+
+== Local validation
+
+* Full build, native semantic fixtures and generated-code mutation checks passed.
+* All 696 proof-dependency reports passed the allowed standard-logical-dependency audit.
+* All 48 compile-failure fixtures failed for their expected reason.
+* All 30 certified-route and 35 legacy-route loopback HTTP checks passed.
+
+== What this permits and what it does not claim
+
+A dynamically supplied query within P2 can use the real LeanIO route while retaining
+certificate-level tenant authorization through output encoding. The pure backend is a
+proved implementation; effectful adapters must produce contract evidence. The batching
+optimizer retains its response-preservation result under deterministic meanings and
+its broader fault-safety result for permitted nondeterministic answers. Its cost result
+counts Machine calls, not wall-clock time or physical network requests.
+
+Parser and envelope source fidelity, external identity/acquisition/service refinement, native
+execution and network delivery remain explicit trust boundaries. The concrete demo
+uses an immutable in-memory snapshot and fixed test credentials. There is no production
+database integration, concurrency/cancellation proof, delivery/liveness theorem,
+complete GraphQL language support or general authorization theorem for arbitrary apps.
+S7/S8 will extend the proved core; P3 features were not added in S6.

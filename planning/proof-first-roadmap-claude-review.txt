@@ -1,0 +1,195 @@
+REVIEW: planning/proof-first-roadmap.adoc
+Reviewer: Claude (Opus 5.5). Date: 2026-11-03. Plan review only.
+Read in full: the roadmap. Inspected for grounding: GraphQL/Machine.lean, Execution.lean,
+Response.lean, LeanIO.lean, Schema.lean. Nothing was built or run. Feasibility claims below are
+design judgments, not experiments.
+
+VERDICT: APPROVE THE DIRECTION; CHANGES REQUIRED BEFORE S0 IS CLOSED.
+The order is right to put the theorem first, and the document already rejects the usual cheats:
+assumed resolver facts, a toy interpreter, tests counted as proofs. Seven blockers remain. They
+are cheap to fix now and expensive after S1-S4 harden around them.
+
+ANSWERS TO THE MAIN QUESTIONS
+- Does S0-S4 give a meaningful theorem? Yes, once B1 and B2 are fixed. It covers static typed
+  operations on the pure model. As written, its central relation can be satisfied by the wrong
+  kind of evidence, and non-vacuity rests on one demo query.
+- Does S5-S7 reach the shipped path? Not yet. The chain ends at encodeResponse(runTenantProgram),
+  a pure term. Nothing states a theorem about the HTTP handler or its non-execution branches, and
+  the IO lifting has no statable form (B3).
+- Can the framework carry a second property? Not as described. See B4.
+- Are the trusted boundaries precise enough? In intent yes, as statements no. See B3 and H4.
+- Is response authorization confused with noninterference? The document separates them correctly,
+  but the outcome bullet "every model object used to produce response data" claims more than
+  value provenance can prove. See B1(d).
+
+BLOCKERS: change the roadmap before implementation
+
+B1. AuthorizedResponse is not yet a well-defined obligation. (L46-55, L146-150, L423-425)
+The prose says the relation connects execution provenance to the response. The chain omits
+provenance entirely. If it is only existential over a plain response, these all pass or stay
+undefined:
+ a. Forged object. "Belongs to the tenant" read as t.tenant = p admits a resolver building
+    {tenant := mine, title := foreign.title}. Ownership must mean membership in the snapshot AND
+    tenant equality.
+ b. Wrong projection. A value check accepts another owned object's title, or Task.title filled
+    from a different field. Leaf rules must be per field: this field, this object, this projection.
+ c. Circular tags. If resolvers return provenance labels, a resolver can lie. Labels must be ghost
+    facts derived from the contract postcondition, never data the implementation asserts.
+ d. Implicit flow. A public constant or an owned record chosen by branching on foreign data passes
+    any value-provenance rule (e.g. hasForeignProjects: true, or a sort keyed on foreign records).
+    Reword the outcome to "every object CONTRIBUTING A VALUE", and record this as allowed by the
+    theorem unless the view theorem in R1 is adopted.
+Correction: define an inductive AuthTree over the selection with per-field leaf rules, and
+  AuthorizedResponse p snap op r := exists t, AuthTree p snap op t /\ erase t = r.
+AuthTree must not mention the resolvers. Exit gate: S0 includes one counterexample for each of a, b
+and c, each with a proof of rejection, and a written ruling on d.
+
+B2. The S4 proof recipe does not fit Machine. (L271-274)
+"Every accumulated result has the required provenance" has no referent: Machine is a free monad,
+so accumulated results live inside the closure in pending (Machine.lean:9), and mapM results are
+out of reach of a step invariant. There is also no LawfulMonad instance today.
+Correction: define by structural recursion
+  Sat (pending c k) Q := Pre c /\ forall a, Post c a -> Sat (k a) Q
+  Sat (done v) Q := Q v
+Prove bind and mapM rules plus LawfulMonad for Machine, then prove the executor by induction on
+fuel and selection, with a Sat-style conclusion for each mutual function. The pure run theorem is
+then one induction on the Machine. Replace the "one-step preservation" wording.
+
+B3. The chain stops short of the handler, and IO lifting has no statable form. (L354-358, L430-433)
+IO is opaque to Lean, so "the pure interpreter realizes legal traces" says nothing about the
+ContextAsync drive that runs (LeanIO.lean:91), and a trace premise about IO cannot be discharged.
+Correction: carry the evidence instead of modeling IO.
+  driveCertified : Sat m Q -> (forall c, n {a // Post c a}) -> n {r // Q r}
+This works in ANY monad. Exceptions and cancellation only prevent a result. A pure backend
+supplies the subtype by proof. An external backend supplies it through a named parameter, never
+an axiom. The handler then produces its wire result from that subtype, so the final claim is a
+type, not a parallel pure definition. Also required:
+ - Cover every handler branch. LeanIO.lean:63-88 returns responses from media negotiation, body
+   errors, envelope errors, parse, validation, operationName and variables. These must be shown to
+   depend only on the request, with no snapshot in scope. Add this as a theorem or a type constraint.
+ - Plumb the principal. handler takes a fixed resolve with no principal parameter today. The API
+   must be per request: authenticate, fix one snapshot value, build resolve from both.
+ - Add a handler corollary after application_wire_corollary, and define runTenantProgram explicitly
+   as prepare, coerce, execute, encode.
+Trace legality is then only needed for later scheduling or batching claims. Defer it.
+
+B4. The contract interface hard-codes one property's shape. (L242-245, L372-375)
+"Child invariant plus scalar leaf provenance" cannot express bounded pagination. That needs a
+postcondition on list length that survives completion, including null and bubbling cases. And the
+proof that the framework generalizes arrives in S8, after S5-S7 have been built on it, under the
+rule "without modifying it".
+Correction: parameterize the spec with object invariants, outcome postconditions, a leaf rule, a
+list rule and an error rule. Conclude with one generic judgment over the completed result, of which
+AuthTree is an instance. Add to the S4 exit gate a small second instantiation, such as a list
+bound on Query.projects, using no tenant facts. S8 then proves the end-to-end version.
+Also state that a verified program must have contracts on all reachable fields. An uncontracted
+field returning objects cannot establish the child invariant, so "optional" (L224) applies only at
+the program level.
+
+B5. Swap detection is not anchored independently of the generator. (L199-203, L217-218, L410-411)
+If the generator emits both the adapter and the mapping it is checked against, a consistent swap
+of two String fields still yields valid evidence, so the acceptance test could pass only because
+the test edits one side.
+Correction: index implementations by field identity, or state agreement from names taken from
+the checked AST: for field f of type T in the AST, the entry for f invokes user member T.f. The
+contract text must also refer to fields through that same identity. Gate: mutate the generator
+itself in a fixture to swap both sides, and show that the contract proof or independent name check
+fails. Also expose demoAst as a readable constant, since faithfulness starts there.
+
+B6. The proved profile contradicts itself, and S6 may force a rewrite of S4. (L49, L143-144,
+L263, L318)
+The outcome claims aliases, but S0's profile omits them and S6 adds them. Arguments and variables
+are needed by project(id:) yet are unassigned before S5, and __typename and introspection are
+unclassified. Separately, an S4 proof by induction on a simple typed selection will not survive
+fragments, runtime @skip and merging, while S6 promises to "reuse the same theorem".
+Correction: publish one profile table per milestone, including arguments, __typename and
+introspection. Design the S4 input as a resolved IR now: per-concrete-type grouped fields, unique
+response keys, explicit runtime guards. S5 and S6 lower into that IR and prove lowering, leaving
+the core theorem largely unchanged. The current runtime mergedFields call at Execution.lean:12
+would move out of the core.
+
+B7. Non-vacuity is too narrow, and hypotheses are unaudited. (L68-75, L302-303, L419-424)
+ a. A program that serves the demo query and returns null otherwise passes S4's proofs and fails
+    no universal gate. Add a universal theorem: on a snapshot with no cross-tenant edges, for owned
+    roots and sufficient fuel, each operation in the profile gives a response with no errors that
+    conforms to the selection and equals the resolver specification. Conformance needs its own
+    independent relation; the chain mentions it only informally.
+ b. "Admitted request" becomes vacuous if prepare rejects too much. S5 needs profile completeness:
+    ValidOperation /\ InProfile /\ WithinLimits -> prepare succeeds. L302 allows rejection only if
+    stated, which is insufficient on the certified path.
+ c. SnapshotWellFormed and "admissible initial context" are unnamed places to smuggle isolation.
+    Drop SnapshotWellFormed from the safety theorem: resolvers check the record they return, so
+    safety needs no uniqueness, including when a foreign duplicate ID shadows an owned one. Keep
+    it for functional results only. Define admissible context as the principal alone. Gate: exhibit
+    an adversarial snapshot with cross-tenant edges and duplicates satisfying every hypothesis.
+
+HIGH: fix in the document, may be settled during the slice named
+
+H1. Decide denial versus absence in S0. (L70, L230)
+"Denial or absence" lets the response itself reveal record existence, which is a modeled
+observation even under the L62 carve-out. Require foreign and missing to give identical outcomes,
+on root lookup and on Task.project. This costs nothing now and is a prerequisite for R1.
+
+H2. Specify the cross-tenant Task.project outcome. (L39, L57-59)
+It is Project!, under [Task!]!, under Project.tasks. One bad edge bubbles to project(id) as null
+and through projects to data: null. That is correct and a good test, but the expected response
+should be written in S0. Also define how a Task's tenant is determined. If derived from its
+project, a cross-tenant child cannot exist and the premise is empty; it must be a stored field. A
+foreign task pointing at an owned project must also be tested.
+
+H3. Run the wire slice before the feature slice. (L125-127)
+S7 depends on S6, which is open ended, so the first end-to-end theorem waits on all language
+features. Use S5, then narrow S7, then S6 re-proving each added feature down to the wire. This
+matches L132-133.
+
+H4. Name the trusted premises. (L101-103, L111-113)
+State them precisely: AuthSound (external, not a Lean premise, because the theorem holds for every
+principal, so the claim is "authorized for whichever principal authenticate returned");
+SingleSnapshot (one value fixed before execution, enforced by construction); BackendRefines
+(a parameter supplying Post). Add table rows for JSON envelope and variable decoding (universal
+safety like the parser, fidelity unproved) and for the Lean compiler and runtime, including
+implemented_by substitutions.
+
+H5. Encoder relation must not be circular. (L347-352, L427-428)
+EncodesOrderedJSON must be an independent grammar or a reference decoder, with
+decode (encode r) = some r, not defined using encodeResponse. ResponseValue.encode is partial
+(Response.lean:81), so it needs replacing, and jsonString via Lean.Json needs a total escape
+function. Include the data/errors envelope, the bubble-to-null case, and the path from String to
+UTF-8 bytes. Define AuthorizedWireResponse as exists r, Encodes s r /\ AuthorizedResponse.
+
+H6. Use a closed error type. (L50, L235)
+Outcome's failure must be a public error type, not String. Execution's internal failure strings,
+coercion text and path segments must be covered by the same relation; errors are response data.
+Error count and list indices are observable, so paths must use filtered indices. Today Outcome is
+Except String (Execution.lean:25), and safeResolve must map to a named constant.
+
+H7. Build the S4 target by hand before the generator. (L122-124)
+S2 currently builds a proof-producing generator against an interface no theorem has exercised.
+Split it: S2a hand-writes the tenant bindings and adapter equations; S4 proves against them; S2b
+generates exactly that shape. The S0-S4 milestone still ends with generated bindings. The kernel
+cost measurement stays in S2a, since Schema.ValidCore evidence already dominates generation memory.
+
+LATER REFINEMENTS: do not block S0
+
+R1. Cheap isolation theorem. Define view p snap removing foreign records and prove
+run snap p r = run (view p snap) p r. This gives two-snapshot noninterference over the pure model
+and closes B1(d) for this program, likely as a corollary of functional resolver specs and H1.
+It may be worth moving from "future work" to just after S4.
+R2. Fuel. Keep it, but state a sufficient bound from selection depth and list nesting. Consider
+replacing fixed 256 (Execution.lean:76) with a bound computed from the IR.
+R3. Echoed inputs. Limit "permitted request inputs" to named cases such as path keys, so that a
+later resolver cannot launder a value through that rule.
+R4. Pagination should add a first argument and state its behavior for negative and missing values.
+R5. Regression fixtures at L486-490 should run automatically and assert the intended failing
+declaration, because a proof can fail for an unrelated reason. This repeats the earlier U4 lesson.
+
+PRIORITIZED ACTIONS
+1. Rewrite the theorem chain: AuthTree with erase, Sat, driveCertified, certified handler (B1-B3).
+2. Rewrite S3 and S4 for the parametric spec, the resolved IR and an early second instance (B4, B6).
+3. Add the universal, completeness and hypothesis gates (B7), and the independent name anchor (B5).
+4. Settle H1, H2 and H6 in S0, since they determine the resolver and error types.
+5. Reorder to S0, S1, S2a, S3, S4, S2b, S5, narrow S7, S6, S8 (H3, H7).
+
+No roadmap or implementation file was edited, and no subagents or stress tests were run.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/proof-first-roadmap-claude-review.txt

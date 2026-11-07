@@ -1,0 +1,30 @@
+S0 REVIEW RESOLUTION — 2026-11-04
+
+Original increment review: s0-claude-review.txt (preserved).
+Closure review: s0-claude-closure.txt (preserved).
+Claude verdict: S0 closed; no specification flaw or blocker found.
+
+F1: fake_label_is_insufficient now rejects an actual foreign Occurrence through
+AuthField ownership. It no longer merely pairs an irrelevant tenant-label hypothesis.
+F2: real foreign membership and wrong-parent projections are rejected, with whole-tree
+wrong-parent and forged-scalar counterexamples in S0Proofs as well.
+N1: lookupOccurrence returns the exact position. FirstOwned proves the first matching
+owned row was selected, and lookupOccurrence_value agrees with the earlier value model.
+N3: explicit fieldShape records result/list nullability; declaration agreement is proved.
+Other initial notes: string-only ID input is documented; AuthField requires owned
+parents; the future validator remains separate from the inductive specification.
+
+Closure A1: both recommended probes are now permanent named, audited theorems:
+shadowed_duplicate_tree_rejected, success_conditions_inhabited, and
+consistent_snapshot_error_free. A helper root_object_selected supports the first.
+Closure A2: Model's OwnedProject and ProjectLeaf are marked auxiliary; the authoritative
+whole-response relation uses occurrence-indexed AuthField.
+
+Closure R1-R5 are tracked in s0-status.adoc as S1-S4 follow-up obligations, not hidden
+S0 claims. The universal executor theorem and universal specification-consistency
+theorem are not claimed complete.
+
+Final validation after additions: python3 scripts/check.py passes, including 83 named
+audits (78 tenant theorems and five existing entries), existing semantics and generated
+name checks, and six expected compile rejections. All dependencies fit the allowed
+Lean foundational axioms. No runtime HTTP behavior was changed in this slice.

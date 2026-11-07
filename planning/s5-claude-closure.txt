@@ -1,0 +1,125 @@
+S5 CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s5-claude-review.txt (B1, M1, M2, L1-L3), the roadmap S5 section
+including the S2b follow-up, and the updated planning/s5-status.adoc.
+
+Files changed since my S5 review (by timestamp):
+- GraphQL/Plan/Input/NamedBindings.lean and NamedBoundary.lean (both new).
+- GraphQL/Plan/Input/Coercion.lean and NamedExample.lean.
+- Example/Tenant/InputScope.lean (new), InputSurface.lean, InputText.lean, Instantiate.lean,
+  S5Proofs.lean.
+- GraphQL.lean, scripts/check.py, s5-status.adoc.
+- Tests/InputNamedCoercionSwap.lean (new), InputNamedExecutionSwap.lean and
+  InputDefaultNull.lean (both changed).
+I read each change.
+
+Ran: python3 scripts/check.py myself, with no other check running. Exit 0. Output in
+.lake/review5/check-s5-closure.out:
+- 593 audit reports: 508 with axioms (propext, Quot.sound, Classical.choice only) plus 85 that
+  use no axioms. No sorryAx.
+- All 35 expected compile failures pass, including InputNamedCoercionSwap,
+  InputNamedExecutionSwap, InputDefaultNull and InputInvalidPrepared.
+- The native S5 tests pass, as do the generation, semantic and earlier native checks.
+- Every new theorem appears in the audit.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S5 IS CLOSED. THERE ARE NO REMAINING BLOCKERS.
+- B1 was fixed, not deferred.
+- M1, M2 and L1-L3 are resolved.
+- The boundaries in s5-status.adoc are stated accurately.
+
+FINDING STATUS
+B1 RESOLVED (named arguments at the framework resolver boundary).
+   Reusable library:
+   - NamedBindings.checkedArguments takes the record layout from the checked AST coordinate.
+     It casts the positional `field.Args` along arguments_encoding_code applied to
+     canonical_field_represents, then packs it canonically.
+   - namedFieldBinding builds an ordinary FieldBinding from a resolver that reads a named
+     ArgumentRecord. named_binding_single states the law.
+   - GraphQL.lean exports both.
+   Executed boundary (NamedBoundary.lean):
+   - `join` is in a CheckedIndexed schema (kernel-checked WellFormedSchema and Represents).
+   - The independent target is a BindingsByField whose record is built by coordinate
+     (inputRecord), not by the library packer.
+   - The application bindings use namedFieldBinding. binding_agreement checks them against the
+     target through adaptBindings.
+   - execution_meaning: for every adapter that agrees with the target, and from independent
+     name-indexed Meaning premises for "left" and "right", the result equals
+     specification a b. The proof runs coerceNamed, a Graph `.call` node, interpretGraph and
+     answerBinding.
+   - graph_executes_named_arguments instantiates it with the arguments supplied in reverse
+     order.
+   Swap rejection, by type-correct mutations with String × String unchanged, each refuted by a
+   positive theorem:
+   - swapped_binding_rejected: adapter packing (args.2, args.1) gives ¬ BindingAgreement
+     target.
+   - swapped_coercion_rejected: lookups swapped in the coercer give ¬ CoercionAgreement.
+     CoercionAgreement is stated over the independent named Meaning premises.
+   - Both have compile-rejection fixtures.
+   - coerceNamed now takes its lookup names from layout[left.index] and layout[right.index].
+   This is the boundary S2b's concern was about (FieldBinding, Adapter, agreement), on the
+   actual interpreter.
+   The status is accurate: the older NamedExample is not the closing evidence, and
+   generated positional resolver APIs are not migrated.
+M1 RESOLVED. InputScope.lean proves the schema facts that justify the tenant's hard-coded
+   location handling:
+   - argument_location: every argument-bearing declaration is Query.project with exactly
+     [("id", _)], so there are no field defaults;
+   - no_query_child;
+   - nonquery_no_arguments;
+   - query_argument_count;
+   - at_most_one_argument: a valid operation has at most one argument occurrence.
+   Together with plan_denotes, which already proves meaning preservation with the single
+   instantiated key, the ⟨.id, true⟩ location, the root-only lookup and the false
+   locationDefault are justified for this schema.
+M2 RESOLVED.
+   - Operation keeps declaredTypes : List (Option ScalarType).
+   - decodeOperation records `none` for an unsupported declaration type
+     (InputText.lean:40).
+   - InProfile requires declaredTypes to equal the interpreter's types
+     (InputSurface.lean:80).
+   - The Boolean flag is gone. An unsupported type can be seen in the decoded AST and is
+     rejected by the profile.
+L1 RESOLVED.
+   - null_default_mutation_rejected proves that nullDefaultMutation, which applies the
+     fallback to explicit null, cannot satisfy the independent DefaultMeaning.
+   - Tests/InputDefaultNull now tries that agreement against the mutated function.
+L2 RESOLVED. The status (around L86-87) says the absent-key placeholder is never observed: S0
+   requires id whenever project occurs.
+L3 RESOLVED. The status (around L83-86) says first-failure ordering is a library policy, not a
+   GraphQL requirement, and that JSON integer decoding through getInt? is outside fidelity.
+
+REMAINING NOTES (not blockers)
+N1 coerceNamed is specific to the two-argument `join` layout. A generic named coercer over an
+   arbitrary checked layout is not provided. Neither is migration of generated or tenant
+   positional bindings to namedFieldBinding. The status says both. Take this up when a schema
+   with multi-argument fields is generated, in S7 or S8.
+N2 Warning: an unused simp argument at NamedBoundary.lean:33. Cosmetic.
+
+WHAT S5 ESTABLISHES
+- Independent ValidOperation, InProfile and WithinLimits predicates over decoded P2 ASTs,
+  with sound and complete preparation (prepare_complete), and kernel-checked limit
+  boundaries.
+- Declarative scalar, variable and default semantics, proved in both directions for success
+  and for ordered rejection. Absent and null stay distinct. A default applies only on absence,
+  and explicit null becomes a field argument error where the spec requires one.
+- Every supplied variable map gives one of two outcomes (execution_cases):
+  - a specified variable request error with no Machine calls;
+  - an execution through the actual S4/S4b core, equal to S0 EvalSpec under the
+    independently interpreted key.
+  An argument error compiles to the S4 error node and never invokes the failed resolver.
+- A reusable named-argument binding builder at the FieldBinding/Adapter boundary, executed on
+  the graph interpreter, with same-type swaps rejected by independently anchored agreement.
+
+BOUNDARIES (accurately stated in the status)
+- Parser and JSON decoding fidelity, the 32768-character limit and parser fuel: no text
+  completeness theorem.
+- No HTTP, physical batching or asynchronous backends.
+- Optimized fault-contract Sat, effect handlers and declared whole-batch transport failure:
+  S6.
+- Enums, input objects and lists, recursive inputs, aliases, fragments and directives:
+  P3 or later.
+- Generated positional bindings are not migrated to namedFieldBinding.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s5-claude-closure.txt

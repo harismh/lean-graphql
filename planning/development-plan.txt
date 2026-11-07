@@ -1,0 +1,189 @@
+Lean GraphQL development plan
+Prepared 2026-11-01 after an independent Claude review via hc.
+Status: proposed architecture and milestones. No implementation, compilation, or performance validation has been performed.
+
+The product should be a schema-first Lean 4 framework with a verified semantic core, generated application interfaces, and a LeanIO HTTP adapter. Ordinary users should define SDL and implement resolvers without writing proofs. Optional contracts should make stronger application guarantees possible.
+
+The accompanying claude-review.txt preserves the independent review. plan-draft.txt preserves the draft to which its line references refer. The review approved the direction with changes. This revision incorporates its six architectural findings; its feasibility estimates remain hypotheses to test.
+
+1. Preserve the practical strengths of existing frameworks.
+
+Use async-graphql as a reference for async resolver ergonomics, context, typed errors, batching, extensions, and interoperability. Apollo Server provides a useful model for lifecycle hooks and developer workflow; Juniper demonstrates useful host-language type mappings; Apollo Router is a reference for a later federation boundary. Basic typed nullability and resolver macros alone do not distinguish this project.
+
+The initial differentiator is a library whose checkers, completion rules, and execution transitions have explicit, useful correctness statements connected to the shipped code. Publish separate labels for type-enforced, implementation-proved, runtime-checked, and assumed properties.
+
+References:
+https://docs.rs/async-graphql/7.2.1/async_graphql/
+https://www.apollographql.com/docs/apollo-server
+https://graphql-rust.github.io/juniper/master/types/objects/defining_objects.html
+https://www.apollographql.com/docs/graphos/routing/v3/request-lifecycle
+
+2. Fix the compatibility baseline and keep the transport replaceable.
+
+Start with LeanIO commit 0bb212d57f3dba2d76cf601f76a7c431a51c902e, which specifies Lean v4.33.0 and package version 0.6.0. Verify the pair in P0 and pin both. Target the September 2025 GraphQL language specification, with an explicit feature matrix. Select and record an immutable GraphQL-over-HTTP draft revision during P0; the language and transport have separate versioning.
+
+Keep Std.Http and LeanIO in the adapter, and Std.Async/ContextAsync in the runtime. The pure core must import neither. Upgrade these dependencies behind adapter/runtime tests.
+
+References:
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/lean-toolchain
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/lakefile.toml
+https://spec.graphql.org/September2025/
+https://http-spec.graphql.org/draft/
+
+3. Make SDL the single schema source.
+
+Build path:
+SDL plus scalar/model bindings -> parsed schema with source spans -> finite schema graph -> checked schema -> generated resolver contracts and adapters.
+
+Use finite identifiers for named types, fields, and arguments. Recursive schema references must not recursively unfold the entire schema into host-language types. Distinguish input/output kinds and nullable/non-null wrappers structurally. Keep inexpensive local invariants intrinsic; express global validity through independent predicates and checker soundness.
+
+Include object types, interfaces, unions, recursive inputs, and introspection meta-fields in the foundational model. Use application model carriers for object values and generated closed sums for abstract-type membership. Prototype the exact representation on Lean before freezing it.
+
+Generate concrete argument records, enums, input types, resolver records, and projection resolvers. A total resolver record must account for every required field. Generate an adapter into the generic executor, with type-agreement evidence and no unchecked casts. Keep carrier/type families as compile-time parameters; runtime-loaded schemas and bindings are deferred. P0 must resolve universe levels and recursive input declarations experimentally.
+
+Successful non-null output uses a non-optional carrier, but every resolver can return a field error. Nullable output additionally admits absence. List and element nullability remain independent. Preserve missing, explicit null, and supplied input values wherever omission remains meaningful after defaults.
+
+Custom scalar input and output codecs must report failure explicitly. Provide strong built-in scalar boundaries, while publishing custom-codec laws as application assumptions unless proved. Do not claim that a host Float wrapper automatically proves kernel-level floating-point semantics.
+
+Ergonomic acceptance criteria: readable generated signatures; all missing resolvers reported together; SDL and Lean source positions; an explicit projection rule; suggested resolver skeletons; no dependent-type manipulation or proof terms in a normal application.
+
+4. Choose a concrete evidence strategy.
+
+Prototype a computable schema checker and prove its soundness once against a separately defined validity relation. For static schemas, generate kernel-checkable acceptance evidence, initially using a kernel-reducible checker and decide +kernel.
+
+Define schema faithfulness against a specified normalization of the input AST, covering extension merging and retained ordering. The theorem must connect the returned schema to the supplied schema, not merely show that some valid schema exists.
+
+Measure kernel reduction and generated declaration costs early. Prefer finite, predictable representations in the proof-facing checker; derive faster lookup tables with an agreement argument if needed. Do not silently replace the default proof route with native evaluation. If compiler-trusting evaluation is offered, give it an explicitly different trust profile.
+
+Audit theorem axioms and project-defined partial/unsafe definitions, implementation substitutions, and external calls relevant to the proof claim. Maintain a reviewed allowance for trusted library/runtime primitives. An axiom listing alone is not a complete runtime trust audit.
+
+Lean erases Prop proofs, but this does not erase runtime validation, lookup tables, allocation, or elaboration costs.
+
+References:
+https://lean-lang.org/doc/reference/latest/ValidatingProofs/
+https://lean-lang.org/doc/reference/latest/The-Type-System/Propositions/
+
+5. Use a pure execution state machine with an effectful driver.
+
+The runtime path is:
+request decoding -> parsing -> whole-document validation -> operation selection -> reusable variable-parametric plan -> variable coercion -> execution machine -> ordered response encoding.
+
+The pure machine requests typed resolver calls and accepts corresponding outcomes. It owns field collection, per-field argument coercion, directives, runtime type conditions, completion, null propagation, and mutation sequencing. Pending query calls expose batching opportunities. The async driver performs effects and returns outcomes through a narrow checked interface.
+
+Prove properties over legal machine traces and resolver outcomes. State the driver's obligations explicitly: dispatch issued calls, associate outcomes with the correct call, respect cancellation decisions, and preserve the mutation sequence. The driver, scheduler, external services, and native execution environment remain outside the initial formal proof boundary. A safety theorem about completed traces is not a liveness or availability theorem.
+
+Keep plans parameterized by variables so the cache can reuse them. Key caches to the actual checked schema identity and document/operation, plus policy identity if policy affects validation. Variable values and authorization-specific results must not accidentally become globally cached.
+
+Separate variable coercion from argument coercion. A field's arguments are prepared as an execution step, and coercion failure follows the field-error path. Example: with f(a: Int!), query($v: Int = 1) { f(a: $v) } can validate while a supplied null for v fails at f. The resolver is invoked only after its own argument coercion succeeds.
+
+Use indexed references and typed resolver calls internally, but an ordinary ordered response tree with an extrinsic Conforms relation. Avoid making every response a deeply dependent application-facing value.
+
+Convert resolver exceptions and scalar serialization failures into explicit field outcomes. A nullable field's failure should not automatically abort unrelated siblings. Model legal cancellation and resulting error variation; do not claim identical results for arbitrary effectful resolver schedules. For serial mutations, choose and document stopping remaining top-level fields after a failure propagates to the root.
+
+The formal language claims initially start at parsed ASTs. Parser correctness is tested first; proving it is separate work.
+
+References:
+https://spec.graphql.org/September2025/#sec-Coercing-Field-Arguments
+https://graphql.org/learn/execution/
+https://graphql.org/learn/validation/
+
+6. Prioritize a small set of proof obligations.
+
+The first release should connect the following obligations to actual library functions:
+
+- Schema soundness and faithfulness: acceptance produces the intended well-formed schema for the supported profile.
+- Resolver agreement: generated bindings cover required fields and respect argument, parent-model, abstract-member, and output types.
+- Coercion soundness: accepted values follow the modeled rules, with distinct handling of variable failures and field argument failures.
+- Validation soundness: accepted documents satisfy the independent relation; plan construction preserves their selection semantics.
+- Completion correctness: responses conform to selected shapes, including partial data, nullable boundaries, list failures, aliases, and error paths.
+- Mutation sequencing: the machine emits top-level calls in the permitted order and waits for preceding completion.
+- Encoding preservation: the wire representation preserves response structure and collected field order.
+
+Do not equate formal correctness with the checker accepting its own output. Exercise both semantic predicates and implementations against independently constructed positive and negative fixtures. Add completeness results incrementally for supported rules; describe soundness and completeness separately.
+
+A well-formed schema does not prove resolver success. A typed resolver does not prove database correctness, transaction isolation, termination, authorization, or freedom from information leaks. Higher-level guarantees require additional models and assumptions.
+
+7. Design the LeanIO boundary deliberately.
+
+Provide a transport-independent execution API and a dedicated GraphQL handler. The inspected LeanIO generic extractor uses generic text errors and JSON-decoding status mapping, so it is insufficient as the entire protocol adapter.
+
+Enforce bounded request bodies, JSON nesting, GraphQL tokens, operation depth, fragment work, and variable sizes. Preserve numeric input information and specify duplicate JSON key handling. Share fragment plans instead of naively expanding an acyclic fragment graph into an exponential tree.
+
+Use an ordered GraphQL response representation and encoder. Lean.Json stores objects in a TreeMap, so routing an already ordered result through generic Json objects can lose selection order. Custom scalar payloads remain governed by their declared codecs.
+
+Implement JSON POST, query-only GET, operation selection, content negotiation, request-versus-execution errors, and introspection. Select the operation before rejecting a mutation sent by GET.
+
+Freeze transport policy against a specific HTTP draft. The draft inspected on 2026-11-01 recommends 422 for several request errors and 294 for partial success; this differs from familiar deployed conventions. Decide and document the draft-following and compatibility behavior, and test real clients/proxies. Do not infer protocol correctness from LeanIO's generic status choices.
+
+ContextAsync has cooperative cancellation. Catch resolver failures at the resolver boundary before using concurrency combinators whose thrown errors cancel sibling work. Test deadlines and disconnect behavior; do not promise preemption of arbitrary blocking code or cancellation of already committed effects.
+
+References:
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/LeanIO/Router/Extractor.lean
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/LeanIO/Request/FromRequestBody.lean
+https://github.com/leanprover/lean4/blob/v4.33.0/src/Lean/Data/Json/Basic.lean
+https://github.com/leanprover/lean4/blob/v4.33.0/src/Std/Async/ContextAsync.lean
+https://http-spec.graphql.org/draft/
+
+8. Organize implementation around six dependent milestones.
+
+P0: Architecture prototype, timeboxed initially to 2-3 weeks.
+Build one end-to-end example with a recursive object, an interface, a union, a recursive input list, an enum, and a custom scalar. Exercise a minimal shared parser, generated resolver records and adapters, kernel evidence, the execution machine, one completion proof, and a real LeanIO POST. Include a throwing resolver, a nullable sibling, ordered output, and disconnect probing.
+
+Measure clean schema checking, incremental builds, and generated errors. Use a synthetic 300-type/3,000-field schema. Provisional targets suggested by the reviewer are under 60 seconds for clean checking and under 10 seconds for a resolver-only incremental rebuild on a recorded reference machine; recalibrate after the first measurements. Resolver edits should not regenerate schema proofs; SDL edits must invalidate the relevant build output. These are decision gates, not measured performance claims.
+
+Exit only after the representation works at useful scale, the generated-to-generic bridge uses no unchecked casts, the example needs no handwritten proofs, and the proof/runtime boundary is explicit. If those fail, revise the architecture before broad feature implementation.
+
+P1: Schema compiler and developer interface.
+Complete the shared lexer/parser with spans, SDL checking, normalization, generated bindings, schema export, and meta-field definitions. Add Lake tracking for external SDL inputs and readable diagnostics. Establish schema checker soundness for the implemented profile.
+
+P2: Operation validation and reusable plans.
+Complete document parsing and validation, operation selection, variables/defaults, aliases, fragments, directives, abstract-type conditions, and meta-field validation. Produce variable-parametric plans. Bound validation work, test adversarial fragment graphs, and establish the acceptance/plan-preservation properties.
+
+P3: Execution semantics and proofs.
+Finish machine transitions, field-level argument coercion, completion, error paths, abstract-type execution, mutation sequencing, introspection execution, and ordered encoding. Prove the key properties for shipped core functions. Cover all list/nullability combinations.
+
+P4: Runtime and HTTP hardening.
+Finish the driver, bounded concurrency, context, request-scoped loaders, cancellation, transport policy, error redaction, and observability. Verify ordinary client interoperability, disconnect behavior, resource controls, and request isolation.
+
+P5: Public alpha and one application-level guarantee.
+Deliver documentation, examples, persisted operations, benchmarks, and one optional contract example. A normal user must be able to author SDL, implement resolvers, and serve requests without proofs. Publish the exact feature and proof coverage, including all assumptions and gaps.
+
+Testing, source diagnostics, and benchmarks begin in P0 and continue through every milestone. Re-estimate the overall schedule after P0.
+
+9. Keep module boundaries aligned with the guarantees.
+
+Begin with one repository and a small set of Lake libraries:
+
+GraphQL.Core: identifiers, schema/value definitions, semantic predicates, response/error model.
+GraphQL.Syntax: shared lexer, SDL and executable-document parsing, source spans.
+GraphQL.Schema: normalization, checking, introspection schema, export.
+GraphQL.Validation: document rules, coercion, field merging, variable-parametric plans.
+GraphQL.Execution: pure state machine, completion, encoding model, proofs.
+GraphQL.Derive: concrete application types, adapters, diagnostics, build integration.
+GraphQL.Runtime: async effects, resolver exception handling, batching, caches, instrumentation.
+GraphQL.LeanIO: HTTP-specific request and response behavior.
+GraphQL.Contracts: optional domain verification.
+
+Keep generation logic shared between an elaborator command and any later source-file generator. Verify Lake invalidation explicitly rather than assuming that reading an SDL file establishes a build dependency.
+
+10. Validate behavior and practicality with distinct evidence.
+
+Build and audit the theorem dependency graph. Maintain compile-failure examples for missing/wrong resolvers and invalid schemas, plus positive recursive and abstract-type examples.
+
+Use conformance fixtures, property/fuzz tests, and differential checks against pinned graphql-js and async-graphql versions on their shared supported subset. Normalize only spec-permitted differences; reference implementations are evidence, not infallible authorities.
+
+Test HTTP behavior, cancellation, context isolation, cache identity, mutation invalidation, and backend failures. Measure elaboration time, binary size, memory, warm/cold validation, allocations, and latency under matched in-memory and simulated-IO workloads.
+
+Reject unsupported features explicitly. Do not describe a partial alpha as fully specification-conformant or the whole service as formally verified.
+
+11. Add stronger guarantees after the core demonstrates value.
+
+First optional example: a pure domain transformation or explicitly modeled state transition with a useful postcondition. Any database effect requires a stated boundary contract.
+
+Later work can add:
+- Cost certificates conditional on enforced list cardinalities and modeled per-field work. Field counts alone do not bound database work, memory, or latency.
+- Compatibility checks for a registered operation set, distinguishing validation, input/output shape, and behavioral compatibility.
+- Restricted authorization capabilities tied to a principal, action, resource/tenant, and policy snapshot; no claim about unrestricted IO.
+- Verified plan transformations under explicit effect assumptions.
+
+Schedule OneOf and remaining baseline language rules explicitly in the coverage matrix. Interfaces and unions are already foundational. Subscriptions, streaming transports, incremental delivery, multipart upload, Federation subgraph support, and distributed planning follow later. Start federation with interoperability; a verified distributed planner is a separate research project.

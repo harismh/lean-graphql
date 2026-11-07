@@ -1,0 +1,198 @@
+S5 REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: roadmap "S5 Check operations and coerce inputs with evidence", including the
+S2b follow-up paragraph; planning/s5-status.adoc; S2b closure (M1, assigned to S5).
+
+Read in full:
+- GraphQL/Plan/Input/Coercion.lean, Variables.lean, NamedExample.lean.
+- Example/Tenant/InputSurface.lean, Prepare.lean, Instantiate.lean, InputDenotation.lean,
+  PreparedExecution.lean, InputText.lean, S5Proofs.lean.
+- Tests/InputDefaultNull.lean, InputNamedExecutionSwap.lean, InputInvalidPrepared.lean.
+- The S0 rules S5 relies on:
+  - ObjectField.project requires exactly [("id", _)] (Selection.lean:28);
+  - DomainValue.invalid is rendered as a framework argument error by interpretField
+    (Evaluation.lean:54-64).
+Confirmed by timestamp that no S0 to S4b module changed for S5. Only the files listed above,
+plus Demo.lean, are new or changed.
+
+Ran: python3 scripts/check.py, after making sure no other build was running. Exit 0. Output in
+.lake/review5/check-s5.out:
+- 579 audit reports: 496 with axioms (propext, Quot.sound, Classical.choice only) plus 83 that
+  use no axioms. No sorryAx.
+- All 34 expected compile failures pass, including the three Input* fixtures.
+- Native "S5: text preparation, variables, defaults, field errors, batching, and named inputs
+  passed".
+- The generation, semantic and earlier native checks pass.
+- execution_cases, prepare_complete, plan_denotes, input_meaning_preserved, named_field_meaning
+  and swapped_execution_detected all appear in the audit.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S5 DOES NOT CLOSE YET.
+- I found no soundness blocker in the variable, default and preparation chain. That chain is
+  correct, the target is specified independently, and it reaches the actual S4/S4b core.
+- One acceptance blocker remains: B1, the named-argument obligation S2b assigned to S5. It is
+  demonstrated only on an isolated example, and the boundary it exercises is not the
+  framework's resolver boundary.
+- Everything else is Medium or Low.
+
+WHAT IS SOUND (verified)
+Independent predicates, not checker aliases.
+   - ValidOperation (InputSurface.lean:85-90) combines:
+     - S0's own ValidOperation on the skeleton, which holds argument names and S0's exact
+       ObjectField argument lists;
+     - unique variable names;
+     - valid defaults;
+     - ExpressionValid and Usable typing at each location;
+     - every declared variable used.
+     Undeclared variables are rejected by ExpressionValid.
+   - InProfile is profile on the syntax (excluded nodes, unsupported literals) plus the type
+     flag (see M2). WithinLimits counts variables, nodes and depth (InputSurface.lean:75-76).
+   - Neither predicate mentions `prepare`. prepare_complete (Prepare.lean:44-53) is a real
+     completeness theorem relative to them. The limit boundaries are kernel-checked:
+     depth 32 against 33, and 32 against 33 variables.
+Coercion and variables.
+   - Meaning, DefaultMeaning, Rejected and LiteralValid are a declarative table of the GraphQL
+     scalar rules: ID accepts String or Int with Int normalized to a string; Int is signed
+     32-bit; Boolean and String are exact; omitted and null are distinct.
+   - Proved in both directions: coerce_complete/coerce_sound and coerce_rejected (iff).
+   - VariablesMeaning and VariablesRejected (first failure in declaration order) are proved
+     sound and complete in both directions (Variables.lean:50-108).
+Null and default semantics match the spec's CoerceVariableValues and CoerceArgumentValues.
+   - A default applies only when the variable is absent (defaulted, DefaultMeaning). Explicit
+     null survives (null_overrides).
+   - A non-null variable that is absent or null is a variable error (missing_required).
+   - A nullable variable is usable at a required location only with a non-null default
+     (Usable). Explicit null for it becomes a field argument error, not a variable error
+     (null_field_failure, argument_error_no_resolver_calls = 0 calls).
+   - An argument default applies when the variable is absent (field_default_on_missing). It
+     does not override explicit null (field_default_preserves_null).
+   - String against ID at a variable location is invalid, because scalar identity is
+     required.
+Variable error versus argument error.
+   - A variable error is a RequestError with no Machine at all: variable_error_no_calls and
+     specified_variable_error_no_calls give `.done`.
+   - An argument error instantiates the S4 error node (keyError gives some .argument, then
+     callNode), so the failed resolver is never invoked (S4 argument_error_no_call), while
+     sibling fields still run.
+   - The surface target renders a key error as S0's existing `.invalid`, which interpretField
+     turns into a framework argument error at the field path. That rule predates S5, so the
+     target does not depend on S5 code.
+Reachability and meaning preservation.
+   - executeKey runs Batching.execute for a clean key, or executeResolved (the S4 graph
+     interpreter and output plan) for an argument-error key. key_execution unifies the two
+     through execute_eq_runtime_any.
+   - plan_denotes (PreparedExecution.lean:32-41) goes resolved_transport, then
+     instantiated_denotation, then parameter_denotation, ending at InputSurface.Eval. That is
+     S0 EvalSpec over S0 domain meanings with the independently interpreted key.
+   - parameterMeanings is checked against S0's interpretField case by case. It is not a copy
+     of the compiler.
+   - execution_cases (PreparedExecution.lean:108-123): every supplied variable map either
+     yields a specified VariablesRejected error with no calls, or runs with a VariablesMeaning
+     environment, a KeyMeaning key, and response = Eval. KeyMeaning is defined on `Meaning`
+     and `eval`, not on idKey, and key_complete makes it functional.
+   - The template depends on the variable's value (native test "missing" ≠ "shared").
+Scope of trust. The status states accurately that parser and JSON fidelity, the text limit,
+   parser fuel and HTTP are outside the proofs. plan_denotes needs BindingAgreement.
+   key_authorized and key_conforms need a pure driver contract. Optimized fault Sat stays an
+   S6 item.
+
+FINDINGS
+B1 (Acceptance blocker) The named-argument obligation is met only by an isolated example that
+   bypasses the framework's resolver boundary.
+   The roadmap S5 paragraph and the S2b closure assign S5 to:
+     "connect named argument coercion and canonical argument records to the resolver
+     boundary. Execute a multi-argument field and reject a same-typed argument swap there."
+   S2b's concern was specific: FieldBinding.single, the adapter and the generated Resolvers
+   consume positional tuples, and nothing ties positional destructuring to argument names.
+   NamedExample.lean does not touch that boundary:
+   - `meanings` (lines 17-19) is a Meanings defined locally in the example. No FieldBinding,
+     Adapter, BindingsByField, BindingAgreement or generated artifact appears.
+   - `program` (lines 21-22) is a hand-built `.pending (.one …) .done`. It is not a Graph
+     `.call` node run by interpretGraph or the compiled path.
+   - coerceNamed (lines 24-29) hard-codes the order left-then-right. That order is not derived
+     from `layout` or the NamedArgument accessors. No fixture mutates it.
+   - The "swap rejection" is swappedMeanings, another hand-written Meanings, whose output
+     differs from `specification` (swapped_execution_detected, and
+     Tests/InputNamedExecutionSwap). That shows two different functions compute different
+     strings. It does not show that an independently anchored framework obligation (binding
+     agreement, adapter correspondence or a compiled meaning theorem) rejects a type-correct
+     swap in plumbing the user does not control.
+   The tenant still has one argument, so no executed tenant behavior is at risk. The gap is
+   in acceptance, not soundness. The status wording "canonical named records with equal host
+   types" and "executed resolver boundary" overstates what is proved.
+   Required for closure: either (A), or the roadmap owner's explicit decision (B).
+   (A) Minimum fix:
+     1. In GraphQL/Plan, add a reusable combinator that builds a FieldBinding (single, and
+        optionally batch) from a function over ArgumentRecord layout. It unpacks the
+        positional `field.Args` with packArguments for the checked layout, and comes with a
+        law: binding.single ctx parent args = f ctx parent (packArguments layout args).
+        Use arguments_encoding_code so the layout comes from the checked schema, not
+        restated by hand.
+     2. Put `join` in a CheckedIndexed schema with an independent BindingsByField target
+        stated by name, through NamedArgument. Run it through a Graph `.call` node with
+        interpretGraph, or compileFor, over an Adapter. Prove BindingAgreement and an
+        execution theorem against `specification` from the independent named Meaning
+        premises.
+     3. Mutations, each type-correct with String × String unchanged, and each rejected by
+        that independent obligation: (i) swap the pack order inside the combinator or
+        adapter; (ii) swap the lookups in coerceNamed. At least one should be a positive
+        ¬-theorem, as in S2b's MutationWitness, not only an `rfl` compile failure.
+   (B) Narrow the claim in the status and roadmap: named records are connected only at the
+     Meanings and denoteCall level. FieldBinding and generated bindings remain positional.
+     The adapter-level obligation moves to the first slice with a multi-argument schema
+     field (S7 or S8). This is a planning decision, not mine.
+M1 (Medium) Argument locations are hard-coded to the tenant schema rather than derived from
+   it.
+   - `expressions` checks every argument at ⟨.id, true⟩ (InputSurface.lean:48).
+   - rootArgument looks only for the root field "project" and its argument "id" (lines
+     92-95).
+   - idKey produces one key that `instantiate` applies to every `.project` branch node
+     (Instantiate.lean:44-50).
+   - Usable is called with locationDefault = false (Variables.lean:131).
+   All of this is correct here, because S0 validity limits arguments to Query.project(id: ID!)
+   with no argument default, and forbids repeated root fields. But it holds by the schema's
+   shape, not by a lemma.
+   Fix: either state these assumptions as proved lemmas, for example "every ValidOperation
+   has at most one argument occurrence and it is project.id at the root", or derive location
+   types and defaults from the checked schema layouts (IndexedSchema.argumentLayouts, which
+   already exists). Note the narrowing in the status either way: a schema with argument
+   defaults would make the false locationDefault reject valid operations, which breaks
+   completeness.
+M2 (Medium) InProfile depends on a flag the decoder asserts, and the unsupported type itself
+   is erased.
+   - Operation.supportedTypes : Bool (InputSurface.lean:17) is set by decodeOperation
+     (InputText.lean:40). An unsupported declaration type becomes ⟨.string, false⟩ through
+     getD (line 39).
+   - So "unsupported variable type" cannot be inspected in the decoded AST. Completeness
+     quantifies over ASTs whose flag means whatever the decoder says.
+   - It is safe today, because only the decoder builds Operation from text and a false flag
+     rejects. But it weakens the claim that InProfile is "independently inspectable syntax".
+   Fix: keep the declared type in the AST, as Option ScalarType or the original TypeRef, and
+   define InProfile from it. Drop the Bool.
+L1 (Low) Several fixtures test function values rather than mutated plumbing.
+   - Tests/InputDefaultNull checks `defaulted` on one input.
+   - InputInvalidPrepared checks ValidOperation with the declarations removed. That one is
+     meaningful.
+   Better: a mutated `defaulted`, one that applies the fallback to explicit null, should make
+   variables_complete or argument_complete fail against the unchanged DefaultMeaning. This
+   gives "changes to defaulting break a meaning proof" a positive witness.
+L2 (Low) KeyMeaning.absent maps a missing root project argument to `.ok ""`
+   (PreparedExecution.lean:44).
+   - This only happens when there is no root `project` field, because S0 validity requires
+     id. The key is then unused.
+   Fix: a short lemma or comment saying the absent key is never observed, for example that
+   Eval does not depend on it when rootArgument = none.
+L3 (Low) The ordered first-failure semantics of VariablesRejected is a stated choice; GraphQL
+   leaves it open.
+   - JSON numbers come from Lean.Json getInt?, so whether 1.0 counts as an Int is a decoding
+     question, outside fidelity.
+   Both should be listed in the status under trusted decoding.
+
+BOUNDARIES TO KEEP (not S5 findings)
+- Parser and JSON fidelity, text completeness (the 32768-character limit and parser fuel),
+  HTTP.
+- Optimized fault Sat, effect handlers and transport failure (S6).
+- Enum and recursive inputs (P3).
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s5-claude-review.txt

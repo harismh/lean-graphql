@@ -1,0 +1,125 @@
+TARGETED RE-REVIEW: LEAN-GRAPHQL PROTOTYPE AFTER R1-R8
+Reviewer: Claude (Opus 5.5). Date: 2026-11-02. Toolchain: Lean 4.33.0 via scripts/lake.
+Companion to prototype-claude-review.txt, which is unchanged.
+
+VERDICT: R1-R8 ARE FIXED, WITH THREE NARROW RESIDUALS. NO CRITICAL OR HIGH FINDINGS REMAIN.
+I found no regression in merge validation, token handling, directive variables, empty
+interfaces or grouped dispatch. Continue to the next milestone. The largest open item is
+generator scaling on large single objects and on input types (U1).
+
+R1-R8 STATUS
+
+R1 FIXED. Validation is one tree pass plus one merge pass, sharing a budget of 100000 units.
+  Worst inputs I tried stopped quickly: 4096 wide 0.037s, same-key 4000 0.038s, repeated nested
+  tree 0.013s (all 422). With 32 concurrent 445-field queries, a benign request answered in
+  0.009s. The old R1 attack is covered by the passing HTTP suite.
+R2 FIXED. `query "{" greeting }` and `{ x ":" greeting }` now return 400; the string "]" works
+  as a value; fields named query, on, true and null still work.
+R3 FIXED. Nine merge probes behaved correctly: disjoint shape conflicts, scalar versus composite,
+  nested conflicts through repeated fields, differing arguments, and conflicts hidden behind
+  @skip are rejected; matching disjoint shapes and interface-plus-object selections are accepted.
+  By reading, compareFields matches the spec: names and arguments are compared unless parents
+  are distinct objects, and exclusivity carries into children. One case is by reading only: an
+  interface and object branch with the same shape but different field names.
+R4 FIXED, under a stricter profile. Nullable variables are rejected even with a default.
+  `$s: Boolean! = true` with explicit null is a 422 before execution, so no runtime null reaches
+  directiveEnabled. `[$s]` is also rejected. This restriction is documented, not a bug.
+R5 FIXED except `_root_` (U2). Host names, Lean keywords, Types/Helpers/Args/Objects, Type/Prop/
+  Sort, mk/rec, `_`, and argument names matching generated locals all compiled.
+R6 FIXED. Composite classification is kind-based at Execution.lean:46 and Validation.lean:186;
+  the nomatch encoder compiled in the positive fixture.
+R7 FIXED for the stated benchmark, PARTIAL overall (U1). I read the benchmark and its record but
+  did not rerun it. Its numbers are internally consistent (5,715,132,416 bytes = 5.32 GiB).
+R8 FIXED. a: 300 siblings pass. b: 1e5 is a parse error. c: covered by the HTTP suite. d: specific
+  messages now reach clients, with 400 for parse and 422 for validation. e: fixed, with the
+  adjacent grammar gap in U3.
+
+End-to-end generated dispatch (new; demo has no such arguments): 14 probes passed, covering enum
+literals and variables, invalid enum 'NOPE', explicit null over a default, singleton list coercion
+at both Int and list levels, [[Int]] with nulls, nested input objects with enum, custom scalar and
+list fields, variables inside literals, and nullable interface lists.
+
+UNRESOLVED FINDINGS
+
+U1. MEDIUM: generation time grows steeply with single-object size and with input count.
+GraphQL/Derive.lean:108-118 (one mutual block for all inputs), :131-139 (string-match dispatch)
+Bounded single runs through graphql_schema:
+  Query with 300 fields             15.3s   pass
+  Query with 1000 fields            over 45s, killed at limit
+  8 mutually linked inputs           1.8s   pass
+  15 mutually linked inputs          9.3s   pass
+  30 mutually linked inputs         over 40s, killed at limit
+  30 object types, mixed features    4.4s   pass
+A timeout is not a failure: I do not know whether the larger cases finish, and causes are
+unverified. For comparison, the benchmark's 3000 fields took 27.6s, because it uses 300 uniform
+10-field objects: every field is String!, with no arguments, inputs, enums, interfaces or
+references between types. So the headline is true but does not bound a schema with a large root
+type or many input types. The resolver measurement also compiles Objects.Query only, never a full
+Resolvers value (the benchmark notes say this).
+Next: split the mutual block by strongly connected components, profile dispatch, and add one
+mixed-feature benchmark. Peak memory is dominated by kernel evidence (5.43 of 5.72 GB in the
+record), which is already tracked as open.
+
+U2. LOW: `enum _root_ { A }` is legal SDL, passes ValidCore, and fails to compile.
+GraphQL/Derive.lean:9, :89. Error: invalid declaration name `_root_`. This is the remaining R5
+case. Mangle Types names, or reject the name in ValidCore. Other positions containing `_root_`
+were not tested.
+
+U3. LOW: `input X implements I` is accepted. Classification: BUG, not a prototype limitation.
+GraphQL/Syntax.lean:183-185 parses implements for input definitions, and Schema.lean:104 does not
+restrict it by kind. You reproduced this; I read the fixture and code but did not rerun it. The
+clause has no runtime effect because possibleType requires an object (Schema.lean:77), so no wrong
+execution results; the SDL is simply invalid. Fix in the grammar, since README lists no such form.
+By contrast, `interface A implements A` also compiles (run), but that falls under the documented
+deferred interface-validity rules, so it is a limitation, not a bug.
+
+U4. LOW: negative fixture Tests/WrongUnion.lean:4 passes for the wrong reason.
+.Query never exists after the rename, so "Unknown constant" no longer tests membership. check.py
+would still pass with .Anything. You are fixing this. .gql_Query alone has the same weakness; also
+add `.gql_User (⟨0⟩ : Ref "Query")`, which should give a type mismatch. That proves the reference
+type is enforced. Not run by me.
+
+U5. LOW: raw tab in a string is rejected.
+GraphQL/Syntax.lean:57-60. `{optional(value:"a<TAB>b")}` returns 400 "invalid string escape".
+Raw tabs are legal in GraphQL strings. Pre-existing, and missing from README's unsupported list.
+
+U6. LOW: effective sibling limit is 445, while parser limit reads 4096.
+GraphQL/Validation.lean:218 spends before comparing keys, so distinct keys cost n^2/2. Run: 445
+passes, 446 returns 422. README:119 warns about this, so it is a documented limitation.
+Grouping by response key first would make this limit far less restrictive and cheaper.
+
+U7. LOW: documentation and cleanup.
+- README and the resolution note say all generated members use gql_. Input types do not: they use
+  constructor mk and fields «input.x», and sums use field ref (Derive.lean:97, :109-110).
+- Removing Repr/BEq means applications cannot compare generated enums with ==. This is an
+  intentional trade-off; emit instances with fixed reserved names later.
+- Validation.lean:113-115 is now dead: collectFields is only called with `some` at runtime.
+
+U8. UNMEASURED: budget units are not schema-weighted.
+One unit can involve schema lookups that scan all types (Schema.lean:50). All timing above used
+the 10-odd-type demo. Measure before relying on the budget for a 300-type schema.
+
+EXPLICIT PROTOTYPE LIMITATIONS (not findings)
+No resolver-call, response-size or deadline limits; list fan-out; order-sensitive arguments;
+strict Boolean! directive variables; unsupported fragment forms, block strings and BOM; HTTP 200
+policy; unproved faithfulness and bridge agreement; 5.3 GiB generation peak. README now states
+these accurately. The earlier proof-overclaim items (P1-P5) are resolved in README, apart from U7.
+
+VALIDATION ACTUALLY RUN
+- python3 scripts/check.py: rc 0. Build, semantic tests, generated names, five rejections, audit.
+- python3 scripts/test_http.py: rc 0, 34 checks.
+- .lake/review2/probe.py: about 60 live HTTP probes against the demo server, including load.
+- .lake/review2/E2E.lean: 14 generated-dispatch probes. First attempt failed on my own indentation
+  error; the corrected rerun passed.
+- .lake/review2/bounded.py and b2.py: 7 name probes and 7 scaling points.
+A larger batch was declined before it ran, and its results do not exist. It was replaced by the
+bounded batch. Larger enums, input fields and a 100-type mixed schema were therefore not tested.
+scripts/benchmark.py was not run. No implementation file was edited, and no agents were spawned.
+Timed-out compiles were killed by process group. Final check: no graphql-demo or lean process
+was left running.
+
+OUTSTANDING ASSUMPTIONS
+Timings are single runs on this Mac. U1 causes are hypotheses. Benchmark figures are as recorded.
+Slow-client behavior and Std.Http/LeanIO internals remain unreviewed.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/prototype-claude-rereview.txt

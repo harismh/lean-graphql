@@ -1,0 +1,30 @@
+= S2b review resolution
+
+M1: narrowed the supported claim in `s2b-status.adoc`. Generated argument records and
+name-checked accessors are optional helpers, not part of resolver execution. Positional
+interpretation remains an application/domain-proof obligation. Roadmap S5 now requires
+named coercion at the resolver boundary, an executed multi-argument field and a
+same-typed argument-swap fixture. This takes the review's explicitly accepted option (b).
+
+L1: the mutation harness now also compiles `MutationWitness.lean`. It preserves the
+actual mutated dispatch and application, removes the deliberately false agreement
+certificates, and proves `mutation_disagrees` by evaluating Project.id at an independent
+counterexample. Its axioms are audited against the standard allowlist. Thus rejection
+is backed by a successful proof of disagreement, not solely an omega diagnostic.
+
+L2: narrowed the benchmark conclusion to the monolithic/per-object schema-correspondence
+choice. Separate argument and binding proofs are an organizational choice, not a
+measured performance conclusion. Roadmap S8 explicitly requires an end-to-end generated
+800-field measurement before larger-schema claims.
+
+L3: `generated_schema_pin` and `generated_layout_pin` in S2bProofs give named equalities
+for the generated/manual evidence boundary.
+
+L4: status and generated comment state the supported application input is
+`BindingsByField` via `fromCanonical`; arbitrary manually filled `Resolvers` records
+are outside the agreement theorem. Status also explains the reflexive application
+specialization and the separate independent domain proofs.
+
+L5: `arguments_encoding_code` proves every successful `argumentsEncoding` result equals
+the canonical `argumentCode` for arbitrary argument lists. Generated schema warning
+removed. No change to domain meanings or execution contracts.

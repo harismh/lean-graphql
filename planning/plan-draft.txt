@@ -1,0 +1,126 @@
+LEAN-GRAPHQL DEVELOPMENT PLAN — DRAFT FOR CLAUDE REVIEW
+Date: 2026-11-01
+Workspace: /Users/hareisu/Developer/lean-graphql (currently empty; no implementation)
+This is a planning review, not an implementation task.
+
+USER REQUEST
+Generate a plan to develop a GraphQL library using Lean 4, using https://github.com/ecyrbe/leanio for HTTP and https://docs.rs/async-graphql/latest/async_graphql/ as a reference. The framework should be proof-oriented, schema-first, and correctness-by-construction, rather than differentiated primarily by another implementation of the GraphQL specification. Use dependent types, inductive definitions, theorem proving, and metaprogramming where they provide useful advantages; not everything needs a proof. The priorities are:
+1. Correctness: make invalid schemas, resolver contracts, and execution states difficult or impossible to represent.
+2. Verifiability: make important behavioral guarantees provable.
+3. Practicality: retain modern GraphQL ergonomics, performance, and ecosystem interoperability.
+Respect what async-graphql, Apollo Server, Juniper, and Apollo Router already do well.
+Latest instruction: "use hc to pass this to claude and get its review".
+
+VERIFIED SOURCE FINDINGS
+- LeanIO main resolved to commit 0bb212d57f3dba2d76cf601f76a7c431a51c902e. Its lean-toolchain specifies leanprover/lean4:v4.33.0; lakefile.toml declares 0.6.0. Pin the commit/toolchain rather than tracking main.
+- LeanIO builds on Std.Http and Std.Async. Router.serve returns Async Server. Extractor handler support is based on ContextAsync and IntoResponse/IntoResponseExt.
+- LeanIO's generic Json extractor calls req.body.readAll and uses generic decoding errors; semantic decoding failures map to HTTP 422, and the extractor serializes errors as text. GraphQL therefore needs a dedicated handler/envelope/response mapping, bounded body reading, and content negotiation, not just an automatically derived JSON extractor.
+Sources:
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/lean-toolchain
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/LeanIO/Router/Extractor.lean
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/LeanIO/Request/FromRequestBody.lean
+https://github.com/ecyrbe/leanio/blob/0bb212d57f3dba2d76cf601f76a7c431a51c902e/LeanIO/Response/IntoResponse.lean
+- async-graphql docs currently resolve to 7.2.1. Borrow async resolver ergonomics, context, typed errors, extensions, request batching/DataLoader and persisted-operation design ideas; Federation and subscriptions are later targets.
+https://docs.rs/async-graphql/7.2.1/async_graphql/
+https://async-graphql.github.io/async-graphql/en/depth_and_complexity.html
+- Choose a fixed language-spec baseline: September 2025, with an explicit supported-feature matrix. Pin a dated GraphQL-over-HTTP draft revision separately.
+https://spec.graphql.org/September2025/
+https://http-spec.graphql.org/draft/
+- Lean proof terms in Prop are erased, but runtime checks and computational data structures still cost time. Kernel-checkable generated evidence and audited theorem axioms are different from native_decide/decide +native compiler-trusting proofs.
+https://lean-lang.org/doc/reference/latest/The-Type-System/Propositions/
+https://lean-lang.org/doc/reference/latest/ValidatingProofs/
+
+PROPOSED PRODUCT POSITION
+Build a schema compiler, a small verified semantic core, and an async execution framework. Aim first for a few useful guarantees that connect to the shipped implementation. Publish which properties are enforced by generated types, established by theorems, checked dynamically, or dependent on application assumptions.
+Normal application development should not require writing proof scripts. Additional domain contracts should be optional.
+The application owns standard SDL. Lean declarations bind models, scalars, and resolvers to that schema. Generated SDL, introspection, resolver signatures, and operation checks all derive from the same checked schema representation. Avoid a second independent code-first schema source.
+
+ARCHITECTURE
+Package/module proposal (start as Lake libraries in one repository, split packaging when useful):
+- GraphQL.Core: names, finite schema graph, type references, raw ASTs, input/output values, field IDs, independent semantic predicates, response/error algebra.
+- GraphQL.Schema: parsing/elaboration, schema validation, normalized representation, SDL export and introspection.
+- GraphQL.Validation: executable documents, operation selection, variables and argument coercion, fragments, directives, field conflict checking.
+- GraphQL.Execution: field collection, typed plan, completion, error propagation, pure/reference evaluator and effect interface.
+- GraphQL.Derive: SDL import commands, generated enums/input types/argument records/resolver records/model binding and projection derivation, schema diagnostics with source spans.
+- GraphQL.Runtime: Std.Async interpreter, bounded concurrency, context, cancellation/deadlines, request-scoped loaders, plan cache, instrumentation.
+- GraphQL.LeanIO: request decoding, GET/POST behavior, media types, HTTP statuses, GraphQL response encoding.
+- GraphQL.Verification: optional domain contracts, cost models, operation compatibility, optimization proofs.
+Dependency direction: pure core has no LeanIO dependency; HTTP adapter depends on the runtime and core.
+
+Build-time path:
+SDL + scalar/model bindings -> parsed finite schema graph -> CheckedSchema with validity evidence -> generated typed resolver contract.
+Runtime path:
+bytes -> parsed document -> ValidatedDocument S -> selected operation -> coerced variables -> executable plan -> resolver outcomes/completion -> typed GraphQL response -> JSON/HTTP.
+Invalid inputs return structured diagnostics before entering an executable state.
+Known persisted operations can be checked at build time; variables and ordinary external operations still require runtime checking. Runtime checks return evidence through verified functions; runtime inputs do not become magically compile-time known.
+
+SCHEMA AND RESOLVER REPRESENTATION
+- Use finite IDs and a finite graph for named schema references. GraphQL schemas can be recursive. Never recursively unfold the entire schema into a Lean type family without a termination strategy.
+- Represent input/output kinds and nullability explicitly; disallow nested NonNull wrappers structurally.
+- Use dependent field/argument references internally, with simple generated records for application developers.
+- Checker properties include unique names, correct referenced kinds, valid roots, type definitions, defaults, interface conformance/covariance, object-only union membership, required singular input cycles and default-value cycles. Claim these only for implemented features.
+- Bind object identifiers to application carrier/model types. Objects are model values with typed field resolvers; do not require materializing an infinite recursive output record.
+- Generate finite enum types and input/argument records. Prototype recursive input representation early; consider generated mutually inductive declarations or a generic indexed finite value representation. Runtime-loaded schemas would use a generic checked representation, not runtime generation of Lean declarations; dynamic schemas are deferred.
+- A resolver table is total over required object fields. Defaults/projections generate actual resolver entries. Missing bindings and signature mismatches fail elaboration.
+- A conceptual field resolver receives context, parent model, and coerced arguments, and returns an effectful Except FieldError (OutputCarrier field). A nullable result wraps its carrier in Option; non-null result does not.
+- For example, Query.user(id: ID!): User produces Except FieldError (Option UserModel). User.name: String! produces Except FieldError String. Effects can fail for both.
+- Distinguish [T], [T!], [T]!, and [T!]! in output interpretation.
+- Keep missing, explicit null, and a provided input value distinct until defaults/coercion are resolved. Do not model all optional input arguments as Option.
+- Built-in scalar representations enforce Int's range, finite Float results, valid enum membership, and ID handling. Custom scalar literal/variable/result codecs are pure and explicit; their semantic correctness is a stated application obligation unless accompanied by laws. Generated structural checking is not a proof of custom scalar business meaning.
+- Output serialization follows the validated selection, aliases, runtime type conditions, and directives; never directly serialize a domain object with a generic ToJson instance.
+
+FIRST PROOF TARGETS
+Define semantic predicates/relations independently of the validating algorithm. Avoid a vacuous theorem such as "valid means the validator returns true." Relate accepted checked objects to the original input/AST, not merely to any valid replacement the checker could return.
+1. Schema-checker soundness: accepted schema faithfully represents the supplied schema AST and satisfies the supported well-formedness rules.
+2. Resolver coverage and type compatibility: generated total table covers each required field and connects argument/result types to the schema. Most of this should be by construction, not a separate proof per application.
+3. Input coercion soundness: successful coercion implements the declared input rules, including missing/null/default/list distinctions.
+4. Document-validator soundness: accepted documents satisfy the supported validation relation; compiled plans preserve the accepted selection semantics. Add completeness per feature where practical; positive fixtures prevent trivial reject-everything implementations.
+5. Completion correctness: output conforms to selected response shape, allowing partial data and root data=null as required; non-null failures propagate to the proper nullable boundary; error paths include aliases/list indices and bubbling does not duplicate a single originating error.
+6. Top-level mutation ordering: a modeled execution trace preserves collected field order and does not start a later top-level mutation before completion of its predecessor. This does not imply transactional atomicity.
+7. Serialization preservation for typed responses: JSON contains only selected data, with the correct response/error structure.
+A non-null field is not a proof that its resolver succeeds. Model explicit success, nullable absence, and execution failure separately.
+Pure completion and coercion are high-value early proof targets. Kernel-checked theorem statements should be audited for sorryAx/custom axioms and compiler-trusting proof shortcuts.
+State exactly which theorems cover the shipped functions. A theorem about a reference evaluator is model-only until the production interpreter uses it or has a refinement argument. A callback effect interface can keep the control/semantic core shared.
+Do not claim arbitrary IO termination, database integrity, thread safety, availability, authorization noninterference, or scheduler correctness from resolver type signatures.
+Formal language claims initially start at parsed ASTs: full parser correctness and the native compiler/runtime/OS/network are outside the first proof scope. Parser and adapter behavior still require conformance testing. Do not call the entire stack formally verified.
+
+OPTIONAL DIFFERENTIATORS AFTER CORE
+- Domain contracts: pure value refinements or explicit pre/postconditions over a modeled state transition. For database-backed resolvers, external effects require a stated contract or checked boundary; unrestricted IO is not proved by a type alias.
+- Cost bounds: certificate that modeled response visits/work <= a bound, conditional on per-field costs and list cardinality limits. Derive limits from coerced variables and enforce/prove resolver list bounds; a declared weight alone proves no resource bound. Retain runtime limits; do not claim wall-clock, memory, or database complexity from field count.
+- Schema evolution: revalidate a registered operation set against a new schema; separately compare response and input contracts. Distinguish query validity, client shape compatibility, and unchanged resolver behavior.
+- Authorization: restricted capability API with evidence scoped to principal, action, resource/tenant and policy snapshot, whose runtime decision checks are modeled. No global claim about arbitrary IO or information-flow secrecy.
+- Optimizations: prove selection/plan transformations preserve semantics under explicit assumptions. Parallelism, caching, batching or deduplication cannot assume arbitrary effectful resolvers commute. DataLoader state must be request-scoped, with clear identity and mutation invalidation behavior.
+
+HTTP AND PRACTICALITY
+Use a transport-independent execute API plus a dedicated LeanIO handler.
+Support JSON POST and query-only GET, operationName and variables, application/graphql-response+json and negotiated compatibility media types, and protocol-correct request-error versus execution-error response/status mapping.
+Pin the HTTP draft snapshot; it is independently versioned from the GraphQL language spec.
+Use bounded body/query/document/fragment/variable sizes and depth, bounded resolver concurrency, timeouts/cancellation, sanitized public errors and structured internal logging. Verify capabilities of Std.Async/ContextAsync with a spike rather than assuming cancellation semantics.
+Start with conservative sequential semantics; add query concurrency once order/error behavior is clear, retaining serial top-level mutations. Use request-scoped batching and caches, persisted-operation IDs keyed to a schema version, and observability hooks.
+Hooks that observe execution are easier to reason about than arbitrary JSON mutation. Hooks that change execution must preserve typed contracts or be explicitly outside guarantees.
+Measure compile/elaboration time, binary size, warm/cold parse-validation cost, allocations and p50/p95 under in-memory and simulated-IO workloads. Compare identical schemas/operations to async-graphql with pinned versions; no advance performance parity claim.
+Interop targets include ordinary GraphQL clients, SDL tools, introspection and GraphiQL.
+
+MILESTONES AND EXIT CRITERIA
+P0 — Feasibility and risk spike (timebox roughly 1–2 weeks).
+Pin Lean/LeanIO. Prototype a recursive User schema, typed resolver bindings, input presence, one proof of null/list completion, and a minimal real HTTP request through LeanIO. Record performance/build costs and trust boundaries. Exit: the dependent representation is usable, one real request works, and no foundational semantic mismatch remains hidden.
+P1 — Schema compiler and generated contracts.
+Implement the supported SDL profile, finite graph, checker, generated resolver signatures and scalar bindings. Exit: invalid names/references/kinds and missing/wrong resolvers are rejected with useful diagnostics; recursive schemas work; checker soundness for the supported profile is established.
+P2 — Documents and coercion.
+Lexer/parser, full-document validation, operation selection, variables/arguments/defaults, aliases, fragments and skip/include. Exit: independent fixtures/differential checks pass and acceptance produces evidence tied to the input.
+P3 — Semantic executor.
+Shared typed field collection, completion, errors and serial mutation traversal. Exit: all nullability/list-error cases and representative alias/fragment/error-path cases pass; key completion and sequencing properties hold for actual core functions.
+P4 — Async runtime and HTTP adapter.
+Production LeanIO integration, context, structured resolver errors, bounded concurrency, request cancellation, HTTP negotiation and introspection. Exit: standard client interoperability and load/disconnect/error cases pass; any unproved runtime-to-core refinement gap is explicitly documented.
+P5 — Usable release and one additional proof-backed feature.
+Persisted operations, batching if justified by benchmarks, docs/examples and one narrow application contract. Exit: a user can define SDL, implement ordinary resolvers, run an HTTP server, and obtain stated guarantees without hand-writing proof scripts; a separate example demonstrates optional stronger verification.
+Phases are dependency-ordered but tests, diagnostics and benchmarks start in P0 and run throughout. Establish dates after the spike; don't pretend full proof/production scope is a small fixed implementation task.
+Publish explicit feature/proof coverage. A partial alpha must reject unsupported constructs clearly rather than claim complete September 2025 conformance. Interfaces/unions and OneOf should be explicitly scheduled based on prototype cost. Subscriptions/WebSocket or SSE, Federation subgraph support, incremental delivery, multipart upload and distributed query planning are later releases. Federation compatibility can precede any verified distributed planner.
+
+VALIDATION STRATEGY
+- Kernel builds and theorem axiom audits; no sorry in the release theorem dependency graph.
+- Positive and negative elaboration examples: missing resolvers, wrong argument/result types, invalid kinds, recursive schema edge cases.
+- Adversarial/fuzz fixtures for parser, coercion, field merging, alias paths, fragments, defaults, all list/null combinations and request versus execution errors.
+- Differential tests against graphql-js and async-graphql on their shared, pinned feature subset, respecting spec-permitted variation. Their output is useful evidence, not an infallible specification.
+- Real HTTP requests, cancellation/disconnect behavior, resource limits, context isolation, cache and mutation invalidation tests.
+- Track unsupported features, proof coverage and untrusted assumptions, not just test counts.

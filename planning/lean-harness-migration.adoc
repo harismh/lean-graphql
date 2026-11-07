@@ -1,0 +1,57 @@
+= Lean-only validation harness
+
+Status: implemented and independently reviewed by Claude; approved with no blockers.
+See link:lean-harness-claude-review.txt[the coverage and process-safety review].
+The link:lean-harness-claude-closure.txt[final closure review] confirms all follow-up
+fixes, with no blockers or medium-severity issues remaining.
+
+The Python validation, HTTP, generator-check and benchmark runners have been replaced
+by Lean modules under `Harness/`. `lakefile.toml` declares `graphqlCheck` as its test
+driver (native executable name `graphql-check`). `scripts/check` is only a POSIX shell
+bootstrap into `scripts/lake test`. Python is no longer a project requirement.
+
+== Preserved checks
+
+* The full default build and native semantic executables.
+* Generated-name and tenant-SDL fixtures.
+* All 696 selected proof-dependency reports, with exact name inventory, allowed
+  dependencies, source escape-hatch scanning, and fail-closed declaration discovery.
+* All 48 expected compile rejections and their pinned diagnostics.
+* Generator determinism, coordinated dispatch/metadata mutation rejection at the
+  independent agreement theorem, positive mutation witness, and recursive/named-input
+  generation fixture.
+* All 30 certified-route and 35 legacy HTTP regressions, including concurrent nested
+  fragment requests, validation budgets, disconnect recovery and redaction.
+* Four benchmark entry points: native batch calls, S2a certificates, S2b partitioned
+  evidence, and legacy full SDL generation/artifact reuse. New reports go under
+  `.lake/benchmarks`; historical published measurements are preserved.
+
+The proof-audit lexer/report parser has its own negative regressions, including
+multiline dependency reports, malformed reports, forbidden dependencies, missing and
+duplicate reports, and unsupported theorem headers. HTTP framing has positive and
+negative tests. Process tests cover output capture, failure exit codes and deadlines.
+These are harness tests, not new application theorems.
+
+The final full gate passed with Python executables shadowed by failing stubs and no
+Python invocation recorded: 696 proof reports, 48 compile rejections, 30 certified HTTP
+checks and 35 legacy HTTP checks. The native batch benchmark and all three schema/codegen
+benchmark smoke variants also passed; the full large schema benchmarks were not rerun.
+Review follow-ups add configurable subprocess deadlines, executed HTTP assertion counts,
+and stronger implementation-attribute guards. Default and doubled timeout self-tests
+pass; a zero timeout multiplier is rejected.
+
+== Commands and boundaries
+
+See link:../Harness/README.md[the harness guide] for commands and time limits.
+`./scripts/check --all` runs the complete gate including real loopback HTTP checks.
+The same command is available as `scripts/lake test -- --all`.
+
+The client uses Lean TCP sockets and separate HTTP framing code, without the server's
+HTTP parser or GraphQL executor. JSON assertions now use Lean.Json, shared with the
+server, rather than Python's JSON decoder; no independent JSON-decoder oracle is
+claimed. Kernel proofs and runtime tests remain distinct.
+
+The process harness targets POSIX hosts; forced cleanup uses `/bin/kill`. Optional RSS
+benchmarks use the platform `/usr/bin/time`. These are ordinary system utilities, not
+Python dependencies. Server and client processes belong to the test run and are cleaned
+up in finalizers. No production server or application proof code was changed.

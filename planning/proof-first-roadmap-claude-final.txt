@@ -1,0 +1,52 @@
+FINAL PLANNING VERDICT: planning/proof-first-roadmap.adoc
+Reviewer: Claude (Opus 5.5). Date: 2026-11-03. Plan review only.
+Read in full: the roadmap and proof-first-roadmap-review-resolution.txt, against
+proof-first-roadmap-claude-closure.txt. Nothing was built or run. Feasibility remains unproved,
+and approval here is not evidence for it.
+
+VERDICT: S0 MAY BEGIN. C1 IS RESOLVED, AND THERE ARE NO REMAINING BLOCKERS.
+The corrections introduce no material inconsistency. Four small definition choices below should
+be made during S0. They are ordinary S0 work and do not need another review round.
+
+C1 RESOLVED
+- Domain: PSelection is S0-owned, and AuthTree, Conforms and EvalSpec are stated over it before
+  the IR exists (L61-63, L197-200). S1 anchors the IR to EvalSpec (L256-258, L558).
+- Independence: AuthTree is hand-written and separate from the framework (L62-64, L297-299). S4
+  must prove the bridge, and L346 says a generic theorem alone is not that bridge. L567-569 agree.
+- Query root: L64-66 applies membership to domain objects only, with structural rules for the
+  root, containers and envelope. This is correct and does not weaken object nodes.
+
+N1-N6 INCORPORATED
+N1 L358-360. N2 L238-240. N3 L189-192, L244-247, L255. N4 L247-250, L353-354.
+N5 L199-203, L219-220, L360-364. N6 L311-313.
+The resolution note describes each accurately. N3 and N5 did not disturb S5-S7: L402-404 and
+L499 follow the template and instantiation split, and L301-302 moves merging out of the judgment.
+
+DECISIONS FOR S0 (not blockers)
+
+D1. Domain of EvalSpec. L200 makes it total over snapshots, but PSelection is untyped field names
+and literals, so it can name unknown fields or a scalar with children. Either define a validity
+predicate on PSelection or give EvalSpec an explicit rejected result. L558 then needs its lowering
+condition: lowerP1 selection = ok ir -> DenotesIR ir = EvalSpec selection. IR denotation also
+needs the domain field meanings as a parameter, since S1 precedes S3.
+
+D2. Fuel in EvalSpec. Modeling exhaustion exactly (L201-202, L361) would copy the executor's
+decrement points into the specification and compromise its independence. Recommended: keep EvalSpec
+free of fuel and faults, require exact agreement at sufficient fuel, and cover low fuel with the
+every-fuel safety theorem (L356). L582 reads consistently under this choice.
+
+D3. Framework failures in AuthTree. L356 and L454 need exhaustion and InternalError to be accepted
+at any field, and argument errors at their field. Include them in S0's failure rules, so that S6
+can return a caught exception without reopening AuthTree.
+
+D4. Meaning of "request" in the chain. L568 takes a selection and L578 takes a request. Treat the
+latter as the instantiated selection obtained from the operation and coerced variables, which also
+gives S5 its bridge (L403-404). This can be written in S0 or S5.
+
+COSMETIC
+The delivery table's S1 and S4 rows omit the denotation agreement and the bridge. L297-298 could
+be read as placing the bridge in S3, while L345 places it in S4.
+
+No roadmap or implementation file was edited. No tests or agents were run.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/proof-first-roadmap-claude-final.txt

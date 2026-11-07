@@ -1,0 +1,118 @@
+PROOF-FIRST ROADMAP — RESPONSE TO CLAUDE'S PLAN REVIEW
+Date: 2026-11-03. This records plan changes, not implementation or completed proofs.
+Original critique: proof-first-roadmap-claude-review.txt (preserved unchanged).
+
+B1: The central specification is now independent AuthTree with exact snapshot-record
+membership, tenant equality, per-field projections, and erase. Fake labels are not
+evidence. Implicit flows are explicitly outside this authorization property; the
+separate view theorem is proposed immediately after S4. S0 rejects forged records,
+wrong projections, and fake provenance witnesses.
+
+B2: S4 now uses recursive Sat on the actual free Machine, LawfulMonad, bind/traversal
+rules, and induction over fuel/IR. The nonexistent accumulated-state invariant is gone.
+
+B3: S6 (formerly the wire S7) introduces driveCertified with a certified backend and
+an effectful subtype result. Pre is supplied to the backend from Sat. The handler
+covers early public failures and execution certificates, binds principal/snapshot per
+request, and projects only certified bytes. runTenantModel and runTenantProgram are
+distinguished. IO semantics are not asserted through an unmodeled trace premise.
+
+B4: Specs now parameterize object invariants, outcome postconditions, leaf/list/error/
+completion rules and their closure laws. A second whole-list property is required in
+S4; S8 finishes its end-to-end form. Every reachable field of a verified application
+must have a contract. Opt-in is at the application level.
+
+B5: Canonical identities from demoAst and an independently supplied BindingsByField
+family anchor adapter agreement. S2b requires mutating both generator mappings and its
+metadata, with a certificate against that independent target still rejecting the swap.
+
+B6: The milestone/profile tables explicitly classify arguments, variables, aliases,
+abstract types and introspection. S1 uses a resolved IR. Later lowering retains
+occurrence guards, inherited child guards, and ordering by the first enabled occurrence.
+It is not allowed to flatten conditional repeated selections into an incorrect union.
+
+B7: Universal conformance, equality with an independent EvalSpec, and error-free success
+under explicit functional conditions replace reliance on one example. S5 requires
+bounded profile completeness. Safety is for arbitrary finite snapshots, with no
+SnapshotWellFormed or hidden authorization premise. Duplicate-ID and cross-tenant-edge
+snapshots must satisfy all safety hypotheses.
+
+H1/H2: Foreign and missing root lookups both yield none; required Task.project lookups
+both fail with the same Unavailable error. Project.taskIds and Task.projectId are
+separate stored relationships; Task has its own tenant. Exact null propagation and
+foreign-task/owned-project examples are specified. Lookup filters ownership before
+selecting an ID, including in duplicate-ID cases.
+H3/H7: Order is S0, S1, S2a, S3, S4, S2b, S5, S6 (narrow wire), S7 (features), S8.
+Manual golden bindings exercise the interface before generation. The first milestone
+still requires generated artifacts at S2b. Kernel-cost measurement begins at S2a.
+H4: AuthSound, SingleSnapshot, BackendRefines, snapshot authenticity, decoding boundaries,
+and native compiler/runtime/network assumptions are named. Certified backend parameters
+must be implemented or supplied explicitly; type annotations do not certify a database.
+H5: Encoding is total, independent of its specification, includes envelope and UTF-8,
+and produces a structured-response witness for AuthorizedWireResponse.
+H6: Outcome uses closed PublicError; no arbitrary backend String messages. Filtering
+precedes response indexing, and every returned handler branch uses public error builders.
+
+R1: The view theorem is proposed after S4, with reference rebasing noted; it is not
+assumed by the authorization theorem or claimed already proved.
+R2: S4 derives sufficient fuel from the finite IR; arbitrary-fuel safety is separate.
+R3: Approved request-derived paths are explicit; there is no generic request-input
+laundering rule in the response data relation.
+R4: The list-bound example fixes missing/null to 20, rejects negatives, caps at 100.
+R5: Automated regressions must identify the intended failing declaration/obligation,
+not merely any compilation error.
+
+No Lean implementation files were changed for this planning task. The revised roadmap
+still needs the planned representation experiments and proofs; review is not evidence
+of their feasibility or completion.
+
+RESPONSE TO THE CLOSURE ASSESSMENT
+Source: proof-first-roadmap-claude-closure.txt (preserved unchanged).
+Claude closed B2-B7 and H1-H7, and identified one remaining B1 clarification, C1.
+
+C1: S0 now owns a first-order PSelection (field names, literals, children), and states
+AuthTree, Conforms, and EvalSpec over it before the IR exists. S1 proves agreement of
+the lowered IR denotation with this independent surface meaning. AuthTree stays a
+hand-written inductive; S4 proves a separate bridge from the generic tenant judgment
+to AuthorizedResponse. S5's PlanDenotes extends the same meaning and bridge. The
+schematic theorem chain states these links explicitly.
+
+N1: The shipped entry must compute sufficient fuel or derive it from WithinLimits;
+a proof about sufficient fuel alone cannot justify an arbitrary configured constant.
+N2: PublicError is parameterized by an application error type alongside fixed
+framework errors. Unavailable and BadLimit belong to their respective applications.
+N3: Selection templates retain guards and occurrences. Instantiation produces a
+guard-free resolved IR with unique keys and fixed order. Core execution does not merge.
+N4: Resolved fields already carry checked arguments or a specified argument failure.
+S4 covers that completion branch and proves it makes no resolver call, before S5.
+N5: S0's EvalSpec is total on arbitrary snapshots and specifies legitimate failures,
+initially with explicit resource/fault inputs. The final D2 refinement below removes
+those inputs from EvalSpec while keeping every-fuel safety separate. S4 requires exact
+semantics beyond the error-free success cases, so spurious failures fail that gate.
+N6: S3/S4 quantify over adapters satisfying the agreement interface; manual and
+generated artifacts instantiate that same interface.
+
+Additional clarification: public roots, containers, and envelopes have structural
+AuthTree rules. Exact snapshot membership applies to domain-object nodes, so the
+query root is not incorrectly required to be a database record.
+
+FINAL REVIEW AND S0 DEFINITION CHOICES
+Source: proof-first-roadmap-claude-final.txt (preserved unchanged).
+Claude's verdict: S0 may begin; C1 is resolved; no remaining planning blockers.
+The review identifies the following as ordinary definition choices needing no further
+review round. They are recorded in the roadmap, without implementing S0:
+
+D1: ValidPSelection states field, argument, and child-selection validity. EvalSpec is
+total for valid selections on arbitrary snapshots. The lowering theorem is conditional
+on successful lowering, and IR denotation takes independent domain field meanings.
+D2: EvalSpec is fuel/fault-free. The pure backend agrees with it at sufficient fuel,
+including domain failures on arbitrary snapshots. Low-fuel and external-fault safety
+stay separate, avoiding a specification that copies executor decrement points.
+D3: AuthTree explicitly permits named framework exhaustion/internal failures at selected
+fields and argument failures at their field, with prescribed paths and completion.
+D4: "request" in the application theorem means the instantiated selection linked by
+PlanDenotes, not raw HTTP bytes. The actual wire guarantee still uses S6's encoding link.
+The delivery table now names the denotation agreement and application-property bridge;
+S3 defines the bridge obligations and S4 discharges them.
+
+No implementation or theorem completion is implied by this planning approval.

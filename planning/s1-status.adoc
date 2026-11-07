@@ -1,0 +1,149 @@
+= S1: typed graph programs and meaning-preserving compilation
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:toc:
+
+S1a-S1d are complete and independently reviewed by Claude.
+`planning/s1-claude-closure.txt` confirms that no S1 blocker remains after reviewing
+the fixes and independently rerunning the full check suite. The initial findings
+and their resolution are in `s1-claude-review.txt` and `s1-review-resolution.txt`.
+The prior `s1-grafast-*` reports review the roadmap, not this implementation.
+
+== Scope
+
+S1 establishes pure graph-program semantics and compilation for the independent
+P1 tenant example. It does not prove the shipped HTTP executor correct, add an
+optimizer, or certify asynchronous scheduling, effects, or external IO termination.
+SDL-to-typed-schema agreement remains S2a; the finite tenant schema is explicit here.
+
+== S1a: independent specification consistency
+
+`Example/Tenant/Consistency.lean:eval_authorized` proves authorization for every
+finite snapshot, principal, and valid P1 operation. There is no global database
+well-formedness premise. `ShapeConsistency.lean:eval_conforms` proves response shape,
+including root bubbling with errors. The independent S0 definitions are unchanged.
+`Occurrences.lean` adds the first-owned converse and lookup-none characterization.
+
+`GraphQL/Plan/Completion.lean` is application-error-parametric.
+`CompletionBridge.lean` proves conversion, mapping, pairing, boundary and collection
+agreement with the S0 specialization. Tenant output pairing and list collection use this generic code. Field boundaries
+and failures still use S0's tenant-specific boundary/failure functions. The output
+plan itself is tenant-specific (`IR.Leaf`/`IR.Branch`); only execution graphs, calls,
+completion primitives and row algebra are generic. Generic output-plan construction
+is S2a/S4 work before a second application.
+
+== S1b: four representations
+
+* `Template.lean`: schema-local field identities, typed literal/variable expressions,
+  occurrence guards, nested child occurrences and order. P1 instantiation rejects
+  nontrivial guards and variables; their evaluation/merging awaits later profiles.
+* `Resolved.lean`: guard-free typed fields and arguments, unique keys, nonempty object
+  children, and explicit optional argument failure. P1 lowering returns clean IR;
+  soundness and completeness cover exactly the independent valid P1 selections.
+* `GraphQL/Plan/Graph.lean`: typed acyclic dependencies and finite structured regions.
+* `OutputPlan.lean`: separate completion structure indexed by the exact graph,
+  including separately branded child frames and response paths. Child bodies accept
+  arbitrary typed input contexts so later rewrites can supply precomputed outcomes.
+
+`prepare` connects templates to checked selections and paired plans and rejects
+empty root operations. `prepare_correct` relates successful preparation to the
+independent source and its response. P1 supports string ID literals, unique field
+names, queries and the tenant fields only, not the prototype's larger feature set.
+
+== S1c: structurally safe graphs
+
+`Ref` can read only an earlier typed context entry. `Capture` explicitly selects
+region inputs; order-preserving `Embedding` transports references across extension.
+`Graph.inputs`, `graph_input_read` and `prior_preserved` establish input preservation.
+Finite `each` and `mapRows` bodies traverse runtime lists without unrolling future
+records into graph syntax. Pure denotation is structural and total, without fuel.
+
+`Schema.lean` defines finite schema-local field references, typed parents, arguments,
+outputs and the `Call`/`Answer` family. Batch answers have exactly the input length;
+`CallDenotation.lean:batch_position` separately proves positional meaning.
+`call_contract` lifts single-call Pre/Post guarantees pointwise to compatible batches.
+Vector-load denotes the same pointwise field meanings, not an optimized backend.
+`node_call_bridge` and `vector_call_bridge` connect graph nodes to `Call.one` and
+`Call.batch`, including materialized row position. `map_rows_position` relates
+region results to the exact parent/item coordinate.
+
+`Rows.lean` retains parent occurrence and filtered position as dependent coordinates.
+Gather changes nested vectors into a flattened finite family; `materialize` gives
+its parent-first ordered vector. Scatter reconstructs by coordinates. It does not
+accept arbitrary unlabelled backend output and presume ordering. S4b must prove its
+backend matching/reconstruction against this interface.
+
+Raw graphs permit arbitrary total pure maps. They are not all certified application
+plans: the semantic guarantee applies to the verified compiler's output. Child region
+values are branded explicitly by that compiler; branding alone is not a provenance
+proof. Plans bind the principal through an input, not a captured request value.
+Snapshot-dependent carrier types currently specialize plans to a snapshot; cross-
+snapshot reuse and caching are not implemented or claimed.
+
+== S1d: semantic contract
+
+`Compile.lean:compile_correct` proves graph-plus-output denotation equals independent
+resolved-selection denotation for every typed pure backend, including argument errors.
+`LoweringCorrectness.lean:resolved_denotation` separately relates clean IR against the
+tenant backend to the unchanged S0 surface interpreter. `planned_response_eq` composes
+these results; `planned_authorized` and `planned_conforms` inherit universal S0 guarantees.
+
+The graph currently evaluates sibling dependencies tail-first; output reconstruction
+preserves source order. Theorems concern deterministic pure values and ordered errors,
+not observable IO call traces. Sequential runtime refinement belongs to S4.
+
+Structural laws cover gather/scatter both ways, ordered materialization, per-position
+vector loads, nested index and value reconstruction at two list levels, and filtered
+rows. `S1Proofs.lean` computes actual compiled successful, nullable-bubbling and root-
+bubbling responses, plus the template preparation path. It also checks duplicate/empty
+rows, missing targets, per-item errors, wrong order, wrong parent, omitted versus null,
+and an argument-error node that does not invoke the backend. Omitted versus null is
+a constructor distinction here; P1 has no optional-input coercion theorem. Deliberately incorrect
+reconstruction algorithms (reversing parent widths and sorting results by key) are
+proved to violate reconstruction on a fixture containing duplicates and an empty row.
+
+`WaveExample.lean` hand-builds `projects { tasks { project { id } } }` with a task
+wave across all project rows: fromLists, gather, vectorLoad of Task.project, scatter,
+then project/task regions receiving precomputed outcomes. Its paired output equals
+the compiled baseline on S0's bubbling snapshot, a successful snapshot, and a
+three-parent snapshot with an empty parent, duplicate task occurrences and a missing
+filtered target. This proves representability and concrete equivalence, not a rewrite
+algorithm or equivalence for every backend (S4b).
+
+One gather over nested project/task lists already retains both required coordinates.
+The separate `gatherNested`/`scatterNested` laws model an additional level of nesting;
+they are value/index algebra, not a claimed graph-node composition theorem.
+
+== Validation
+
+`scripts/check` passes:
+
+* default build (now includes `Example.Tenant.S1Proofs`) and existing semantic tests;
+* generated-name check;
+* 179 discovered tenant/plan theorem audits plus five existing declaration audits;
+* source guard against proof/implementation escape hatches;
+* six existing and seven new expected compile failures: wrong schema, parent, result,
+  forward reference, cyclic construction, batch length, and output graph identity.
+
+The audit accepts only `propext`, `Classical.choice`, and `Quot.sound`.
+`Harness/Audit.lean` (the Lean replacement of the original Python audit) strips nested comments and strings and enforces one explicit
+namespace and column-zero public theorem headers. Unsupported/private declarations
+fail closed. Separate-line public attributes are discovered; inline attributes and
+multiline theorem headers are rejected. Its self-test exercises these rejection paths.
+Every proof source is imported into the generated audit; no new theorem is omitted
+because its module was absent from a hand-maintained root import.
+
+The unchanged HTTP stack was not retested for this pure-plan slice. No HTTP correctness
+or performance improvement is claimed. Some Lean unused-simp-argument warnings remain;
+there are no admitted proofs or additional axioms.
+
+== Review closure and next boundary
+
+Claude closed S1a-S1d on 2026-11-05. The remaining optional witness improvement is
+an asymmetric multi-parent width fixture; the existing wave uses [2,0,2], while the
+separate bad-parent algorithm fixture already detects reversed widths. No S1 work
+is blocked by this note.
+
+S2a should address snapshot-independent carriers, typed schema/SDL agreement and the
+batch capability/key-sufficiency interface. S3 supplies node/row ownership contracts;
+S4 proves the sequential interpreter; S4b proves and implements the optimizer.

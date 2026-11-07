@@ -1,0 +1,181 @@
+CODE REVIEW: LEAN-GRAPHQL FIRST P0 SLICE
+Reviewer: Claude (Opus 5.5). Date: 2026-11-01. Toolchain: Lean 4.33.0 via scripts/lake.
+
+VERDICT: GOOD SLICE, NOT READY TO BUILD ON. 8 REQUIRED FIXES.
+The architecture holds up in practice: the suspended machine, per-field argument coercion,
+ordered encoding, bounded JSON path, private Plan constructor and resolver contracts all
+behaved as documented. No test failed. But the existing suites miss a remotely triggerable
+validator denial of service, parser token confusion, a missing validation rule that README
+describes the wrong way round, and generator failures on ordinary schemas. Generated schemas
+also stop working at a size far below the benchmark headline. Fix R1-R8 before adding features.
+
+SCOPE AND PROVENANCE
+Every "Repro" below was run by me unless marked otherwise. A separate /code-review run,
+started directly from the terminal and not by this review, reported ten findings. I treated
+them as leads. Items it raised are tagged [leads]; I re-ran them unless noted. Its probes live
+in the session scratchpad, not in this repository.
+Throwaway files: .lake/review/. No implementation file was edited. scripts/benchmark.py was
+not run.
+
+REQUIRED FIXES (ranked)
+
+R1. CRITICAL: exponential validation is a remote denial of service. [leads]
+GraphQL/Validation.lean:158-172 and :175-177
+Each fragment body is validated through merged fields (:159, :172), then again by the trailing
+loop (:177). Nested fragments therefore double per level. No limit applies: a 700-byte
+document is far inside the 65536-byte, 256-budget, and 64-fuel limits.
+Repro: POST with n repeats of "... on User{friends{" inside user(id:1){...}.
+  n=14 326 bytes 0.026s | n=18 414 bytes 0.403s | n=20 458 bytes 1.605s | n=22 6.51s
+  n=31 fits in 700 bytes; extrapolated at about 2x per level, that is roughly an hour of CPU
+  per request. Extrapolation only; I did not run it.
+Service impact, measured: with 16 concurrent n=24 requests, a benign { greeting } timed out at
+20s. The cause of starvation (likely the task pool) is not established. Unauthenticated.
+Interface/union fields should multiply this through the per-type loop at :158 (by reading).
+Fix: remove the re-traversal. Put directive checks in one linear walker over the syntax tree,
+and validate each field once per (type, merged selection), with memoization. Add a global
+validation-work budget. Add a regression test with a time bound.
+
+R2. HIGH: parser ignores token kind, so strings act as syntax. [leads]
+GraphQL/Syntax.lean:99 (peek), :105-108 (expect); consumers at :209, :214, :223, :245, :273
+Repro (run): `query "{" greeting }` and `{ x ":" greeting }` both return 200 and execute.
+Valid input also breaks: the string "]" in a [String] literal ends the list at :209 (by reading;
+the demo schema has no [String] argument). Fix: match on (kind, text) and give peek a kind.
+
+R3. HIGH: SameResponseShape is not enforced; README says the opposite. [leads]
+GraphQL/Validation.lean:132, :158-159; README.txt:89
+Merging runs per concrete type, so conflicts between disjoint object branches pass.
+Repro: { search { ... on User { x: name } ... on Team { x: id } } }
+  => 200 {"data":{"search":[{"x":"Ada"},{"x":"10"}]}}. x is String! in one branch and ID! in
+  the other, which the spec's field-merging rule must reject.
+README calls these checks "deliberately conservative"; here the check is permissive. Fix the
+rule; until then correct README.
+
+R4. HIGH: a null directive variable destroys sibling data and has an empty path. [leads]
+GraphQL/Validation.lean:71, :103; GraphQL/Execution.lean:12-13
+Repro: query($s:Boolean=true){ greeting @skip(if:$s) broken } with {"s":null}
+  => 200 {"data":null,"errors":[{"message":"expected Boolean","path":[]}]}
+One field's condition fails the whole selection set. Decision for the prototype: require
+Boolean! exactly at directive locations (strict, simple) and document it, or evaluate
+per field so failure carries that field's path. Prefer the first.
+
+R5. HIGH: generated names collide with host names and with each other.
+GraphQL/Derive.lean:34-36, :59, :78-79, :83-85, :107, :112-114
+hostType and decoders emit unqualified Option, List, and Except inside the schema namespace.
+Generated helper names share one namespace with SDL names, and "_" joins are ambiguous.
+Repro, compile failures on schemas that pass checkSchema:
+  enum Option { A B } ... a: Option                     Function expected at Option
+  enum List { A } ... a: [List!]!                       Function expected at List
+  enum Except { A } ... a(e: Except): String            Function expected at Except
+  enum Resolvers { A }                                  already declared
+  enum schema { A }                                     already declared
+  enum E {A} enum decodeE {B}                           P14.decodeE already declared
+  type A_b { c: String! } type A { b_c: String! }       A_b_cArgs, A_b_c already declared
+`enum GraphQL` happened to compile; do not rely on that.
+Fix: emit _root_-qualified host names, put generated helpers in a reserved sub-namespace, and
+use an injective field-name mangling. Add these schemas as positive compile tests.
+
+R6. MEDIUM-HIGH: interface with no implementor crashes the generator. [leads]
+GraphQL/Derive.lean:91-92; related classification at Validation.lean:170, Execution.lean:46
+Repro: interface Unused { id: ID! } type Query { a: String }
+  => "schema generator failed: unexpected end of input" on def encodeUnused.
+Fix: emit a valid empty match. Classify composites by kind, not by possible-type scan. The scan
+treats such an interface as a leaf in validation and completion.
+
+R7. MEDIUM-HIGH: graphql_schema fails well below the benchmark's size, and costs far more.
+GraphQL/Derive.lean:79, :112-114; planning/prototype-benchmark.json; README.txt:44-46
+The JSON states its scope honestly (excludes 3000 resolver declarations), but the headline
+figures do not describe the path an application takes.
+Repro through the real command, 10 fields per type, generated Resolvers record:
+  30 types     rc 0  4.7s    1.80 GiB max RSS
+  50 types     rc 0  16.0s
+  75 types     rc 1  40.6s   maximum recursion depth has been reached
+  100 types    rc 1  18.1s   same error; 2.67 GiB max RSS
+The failure appears to be at the Resolvers declaration: later errors say that structure's
+fields do not exist. I inferred this from those errors. The limit lies between about 500 and
+750 fields. The failing runs stopped early, so their time and memory are not a full cost.
+The kernel-check gate was met for explicit schema data, but no 300-type schema can currently
+go through graphql_schema, and the 0.907s rebuild is unproved for generated code at that
+scale. Fix: stop emitting one flat record; group per object type. Benchmark the real
+command, and publish its numbers beside the explicit-schema numbers. The roughly 5.0 GiB for
+a kernel check of 300 types also deserves its own investigation.
+
+R8. MEDIUM: smaller correctness defects in supported behavior.
+a. Selection and list budgets count siblings. GraphQL/Syntax.lean:210, :217, :268. [leads]
+   A 300-field selection returns 400 (run); 250 returns 200 (run). The same mechanism caps
+   literal lists near 128 (by reading). Undocumented, and the real message is discarded. Use
+   separate depth and count limits.
+b. Numbers end without a lookahead check. GraphQL/Syntax.lean:77-83. [leads]
+   { number(a:1b:2) } reached validation and returned 422 instead of a parse error (run).
+   [1e5] and [1-2] splitting into two tokens was reported by leads; not re-run. Reject a
+   number followed by a name-start character, '.', or '-' adjacent to digits.
+c. Accept weights are case-sensitive. GraphQL/LeanIO.lean:14. [leads]
+   ...graphql-response+json;Q=0, application/json;Q=0.5 returned the refused type (run).
+d. Validation messages are discarded. GraphQL/LeanIO.lean:80-81, :85. [leads]
+   Every client sees "GraphQL validation failed" (run), though offsets and details exist.
+   These describe the client's own document; return them. Expose parse versus validation
+   from prepare, which also removes the double parse at :80.
+e. Invalid SDL accepted. GraphQL/Schema.lean:84-101, GraphQL/Syntax.lean:142.
+   input I { a(x: Int!): Int } compiles and drops the arguments. enum E { true null } compiles,
+   and those members cannot be input literals. Reject both; also reject "__" on arguments and
+   enum values (by reading).
+
+PROOF AND DOCUMENTATION OVERCLAIMS
+P1. checkSchema_sound (GraphQL/Schema.lean:107-110) is of_decide_eq_true on
+    `decide s.ValidCore`. That is the "valid means the validator returns true" shape the plan
+    prohibits. It is correct, and ValidCore is a readable predicate, but it is not a checker
+    soundness theorem. README:52-56 should say the checker is the predicate's decision
+    procedure. Plan theorem 1 (faithfulness to the input) has no counterpart: nothing relates
+    Demo.rawSchema to the SDL, and the schema reaches Lean through a string round trip at
+    GraphQL/Derive.lean:16-22.
+P2. Machine.bind_pending and nullableBoundary_stops are rfl facts. nonNullList_bubbles is real
+    and covers code that Execution.lean:44 uses, but no theorem says executeObject calls these
+    helpers correctly. README:73-75 says this adequately; the "Proved" list reads stronger
+    than it is. Label these as helper lemmas.
+P3. README:65-66 "Enforced by generated Lean types" is accurate for host signatures only.
+    Given R5-R7, add that generation can fail on schemas which pass ValidCore.
+P4. README:80-82 "inline fragments" omits two unsupported forms, both returning 400 (run):
+    `... { greeting }` and `... on Query @skip(if:true) { greeting }`. Add them, plus block
+    strings and a leading BOM, to the unsupported list.
+P5. check.py scans GraphQL/*.lean only and permits `partial`. README says so. Fine for now;
+    extend it before any theorem covers the encoder at Response.lean:81.
+
+NEXT-MILESTONE WORK (not defects in this slice)
+- No resolver-call, response-size, or deadline limit. List fan-out grows as width^depth up to
+  depth 64. Not observable on the demo (friends has length 1), so unmeasured. Prioritize it
+  with concurrency work: real resolvers make this the next DoS.
+- Cancellation of running resolvers, concurrency, batching, plan cache (documented).
+- Dynamic RawValue bridge and generalized model carriers (documented; not reviewed as bugs).
+- Execution.lean:46 costs O(types^2) comparisons per leaf, by reading [leads]; dispatch is a
+  linear string match. Intern when R6 changes classification.
+- Error `locations`, 294 opt-in, lone-surrogate policy (a lone \ud83d returns U+FFFD).
+- Required input cycles compile to uninhabited types (documented). Empty Accept returns 406.
+
+VERIFIED AND ENDORSED
+- Plan.mk is really sealed: both structure-instance and anonymous-constructor forgery failed
+  outside the module.
+- Argument coercion: a null reaching a required argument is a field error, and sibling data
+  is kept.
+- Boundary checks passed: Int range at both ends; 1.5 rejected; duplicate and unknown input
+  fields; 8000-key body gives 413; 63 nested fields gives 422 and the server stays up.
+- UTF-16 surrogate pairs decode correctly in variables and documents.
+- Mutually recursive input types, Lean keywords as names, and single-member unions generate.
+- Merged-field and sibling-preservation semantics match tests. Flat and wide fragment
+  shapes stayed fast (53 KB in 0.02s); the blowup is specifically nesting through fields.
+
+VALIDATION ACTUALLY RUN
+- python3 scripts/check.py: rc 0. Build, 33 semantic checks, 5 expected rejections, audit.
+  Axioms seen: propext, Classical.choice, Quot.sound only (Machine.bind_pending has none).
+- python3 scripts/test_http.py: rc 0, 22 checks.
+- .lake/review/probe.py and probe2.py against a real loopback demo server (about 45 probes).
+- .lake/review/comp.py and scale.py: 18 compile probes and 4 scaling schemas.
+
+OUTSTANDING ASSUMPTIONS
+- Timings are single runs on this Mac; treat them as orders of magnitude.
+- The n=31 cost is extrapolated. The starvation mechanism is inferred.
+- The recursion threshold is bracketed only by the 50 and 75 type runs at 10 fields each, with
+  the current maxRecDepth; I did not attempt a higher setting.
+- Items marked "by reading" were not executed.
+- I did not review Std.Http or LeanIO internals; slow-client and connection-limit behavior
+  remain untested.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/prototype-claude-review.txt

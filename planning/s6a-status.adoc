@@ -1,0 +1,108 @@
+= S6a: certified effectful driver
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+
+Status: CLOSED. Claude independently confirmed closure with no blockers in
+link:s6a-claude-review.txt[S6a review], rerunning all 614 audits and 38 rejection tests.
+This slice closes the driver foundation. Full S6 subsequently CLOSED with S6c/S6d;
+see link:s6-status.adoc[S6 closure].
+
+== Scope and proof chain
+
+`GraphQL.Plan.CertifiedDriver` exports a reusable `CertifiedBackend` and
+`driveCertified`. The backend receives the actual pending call and its `Pre`
+evidence and must return the actual answer with `Post` evidence. Recursion on the
+actual Machine passes that evidence to the continuation's Sat obligation. A returned
+value carries Q in its subtype. This works for arbitrary Monad effects and does not
+assume a semantic model of opaque IO. Exceptions/nontermination can prevent a result;
+no liveness or network delivery claim follows.
+
+`pureBackend` constructs certificates from a supplied refinement proof.
+`drive_pure_value` proves agreement with the existing pure Machine interpreter.
+The certificate producer is executable code, not just a proposition asserting that
+an external service is correct. External services must implement the same producer
+interface with justified refinement evidence to join the certified path.
+
+`TransportBackend` returns either a certified Answer or a named TransportFailure.
+A whole-batch transport failure is outside the vector of per-key answers.
+`driveTransport` stops without resuming the failed call. `transport_failure_stops`
+proves that branch. `drive_transport_success` relates the transport driver with a
+non-failing backend to the certified driver for any lawful monad. `redactTransport`
+catches an exception and discards its payload, returning only the public name
+`internal`. It does not fabricate per-field resolver answers. Redaction is opt-in:
+the transport entry must receive a backend wrapped by `redactTransport` for the
+chosen exception type. Plain `runPrepared` is intended for non-throwing producers;
+otherwise its exceptions propagate. The wrapper catches backend-call exceptions,
+not panics, nontermination or arbitrary driver/continuation failures. S6d must also
+control its outer handler failure boundary.
+
+== Connection to S5
+
+`Example.Tenant.CertifiedExecution.runPrepared` consumes the S5 Prepared operation
+and supplied variables. Its returned subtype is indexed by that operation, supplied
+variables, principal and snapshot. `Guarantee` has two branches:
+
+* An independently specified VariablesRejected request failure.
+* A response with independent VariablesMeaning and KeyMeaning witnesses and an
+  AuthorizedResponse certificate for the instantiated selection and exact request.
+
+The authorization predicate concerns the instantiated selection, not surface text.
+For an argument-error node its placeholder id is unobserved; KeyMeaning links the
+instantiated key/error back to the operation. `response_conforms` derives shape
+conformance from authorization. The variable
+failure branch is equal to a pure return, with no backend invocation, for both
+driver entries. Argument failures use S4's already certified error nodes.
+`adapterBackend` constructs a certified producer from the independent binding
+agreement and S3 contracts, including batch per-position postconditions.
+`pure_prepared_eq_s5` proves that its pure run has the same response as S5's actual
+entry, including the deterministic batching dispatcher.
+
+The effectful entry uses the S4 compiled Machine and its existing fault Sat proof.
+It does not run the optimized S4b machine. That machine still needs the S6b Sat
+proof before any certified effectful handler can dispatch it. Equality with S5 for
+the pure producer is a response theorem, not an optimized fault-safety theorem or
+a performance claim.
+
+== Validation
+
+Validation passed: 614 public proof-audit reports and 38 compile-rejection tests.
+
+`scripts/check` includes the new public proof audit, native IO and state
+execution, and compile rejections. The state backend can return different permitted
+answers as its counter changes. Both exact and faulting responses carry the same
+request-indexed guarantee; variable and argument failures leave its counter intact.
+
+A real batch primitive followed by a second call, certified with the tenant fault
+contracts, distinguishes whole-transport failure (one call, then abort) from per-key
+faults (two calls). It tests the driver boundary, not the optimized plan's Sat proof.
+An arbitrary private exception string is provably absent from the resulting named
+failure; the native IO test also exercises caught exceptions and early rejection.
+
+Compile-rejection fixtures reject an unproved answer, moving a certificate between
+requests, and using a TransportFailure as a batch Answer.
+
+== Remaining S6 gate
+
+* S6b: Sat for the optimized machine under fault contracts; preparation ownership,
+  representative membership, compatibility, and per-position reconstruction.
+* S6c: independent ordered JSON encoding relation, total encoder, escaping/numbers,
+  response envelopes, bubbling and UTF-8 preservation, AuthorizedWireResponse.
+* S6d: request/public-failure preparation, request authentication and immutable
+  snapshot acquisition, certified runTenantProgram, narrow LeanIO route, branch-by-
+  branch wire guarantee and HTTP/redaction tests. AuthSound and native delivery
+  remain explicit external boundaries.
+
+No P3 feature is enabled, and the original full S6 acceptance gate is unchanged.
+
+== Review follow-ups
+
+No blockers remain for S6a. Carry the low review items into their owning slices:
+S6b re-tests transport abort versus per-key faults on the actual optimized wave;
+S6d adds a wrong-snapshot backend-answer certificate rejection, handles redaction at
+the route boundary, and may add a generic-monad first-failure equation for branch
+proofs. The existing foreign-request fixture checks index separation only; it is
+not a proof that an external backend reads the correct snapshot. That obligation
+belongs to the backend's actual Post certificate and external refinement evidence.
+
+Subsequent status: S6b is now closed; its actual optimized fault Sat and transport
+wave tests are documented in link:s6b-status.adoc[S6b status]. S6c/S6d remain open.

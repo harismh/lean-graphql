@@ -1,0 +1,45 @@
+S1 implementation review resolution (2026-11-05)
+
+Source: planning/s1-claude-review.txt. Closure confirmed in planning/s1-claude-closure.txt. Claude independently reran the
+full suite and closed S1a-S1d with no remaining blocker.
+
+B1: Generalized Output.object body inputs (with rationale comment). Added
+Example/Tenant/WaveExample.lean: the exact nested projects/tasks/project/id plan,
+fromLists -> gather -> vectorLoad Task.project -> scatter, then project/task bodies
+that read precomputed outcomes. Three rfl equivalence theorems compare the hand-built
+paired plan with compile: S0 bubbling, successful target, and three parents with an
+empty parent, duplicate task occurrences and a missing filtered target. There is no
+Task.project call in taskBody. The actual optimizer/general backend proof remains S4b.
+
+M1: node_call_bridge and vector_call_bridge connect graph denotation to Call.one and
+Call.batch. materialize_map proves the row/vector link. Batch positional meaning is
+separate from cardinality.
+
+M2: badParentScatter reverses parent widths before chunking materialized results;
+badKeyOrderScatter sorts by key before reconstructing original widths. Both are
+proved to violate reconstruction on [[2,2],[],[1]]. Existing positive laws and small
+counterexamples remain as additional checks.
+
+M3: Status now explicitly distinguishes generic Completion pairing/collection from
+tenant-specific boundary/failure and Output constructors. Generic Output is recorded
+as S2a/S4 work, not claimed complete.
+
+L1: New negative fixtures require both Type mismatch and a distinctive diagnostic
+substring for the intended schema/reference/result/batch/graph mismatch.
+L2: Forward-reference fixture now attempts to read beyond a nonempty prior context
+inside a snoc node.
+L3: Added map_rows_position.
+L4: Status explains that the task wave needs one gather over nested lists; the
+additional gatherNested/scatterNested algebra is not claimed to be a graph theorem.
+L5: Added framework_error_roundtrip and framework_code_roundtrip.
+L6: Omitted/null remains a constructor distinction at P1; no optional-input coercion
+claim. Semantic coercion remains S5.
+L7: Kept allowed standard axioms unchanged: propext, Classical.choice, Quot.sound.
+
+Audit hardening beyond review: proof_audit.py now rejects qualified/apostrophe theorem
+names instead of potentially matching and auditing a shorter declaration name.
+Self-tests cover both. Current discovery: 179 tenant/plan theorems + 5 existing audits.
+
+Later-scope notes remain in the review and s1-status.adoc: snapshot-independent
+bindings, ownership contracts, runtime interpreter refinement, generalized output,
+and optimizer/backend laws. No HTTP/executor/optimizer correctness claim was added.

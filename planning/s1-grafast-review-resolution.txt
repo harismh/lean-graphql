@@ -1,0 +1,51 @@
+S1 GRAFAST ROADMAP REVIEW RESOLUTION — 2026-11-04
+Planning only; no S1 implementation has started.
+Original review: s1-grafast-claude-review.txt (preserved unchanged).
+
+B1: S1 owns gather, vector map, scatter and vector-load syntax and their structural
+semantics. P1 lowering initially emits simple field calls/each. S4 interprets all forms
+sequentially. S4b supplies the transformation, dedup/chunk algorithms and batch strategy
+without changing syntax, denotation or output-reference typing.
+B2: S1 reserves Call.one and Call.batch indexed by input cardinality, with pointwise
+Pre/Post. S2a independently anchored bindings have optional certified batch capabilities;
+S2b preserves them. A looping sequential fallback cannot claim the reduced-call bound.
+H1: Pure authorization/conformance follows from interpreter exactness plus S1a. The
+Sat/independent-property bridge covers fault safety and S6. S3 contracts include nodes,
+region rows and the invariants output reconstruction consumes.
+H2: Exact optimization equivalence is for deterministic backend functions satisfying
+pointwise batch equality. IO inherits certificate-level safety, not an IO equality.
+Counts concern emitted Machine primitive calls for answer sequences; mapping to actual
+backend requests requires one request per primitive and no retries.
+H3: Only verified lowering constructs plans in S1-S4b. Author-written plan resolvers
+are an explicit future extension with an independent field-meaning proof obligation.
+M1: Choose structural pure interpretation now; remove sufficient-fuel premises. External
+resource exhaustion is a named fault policy, not a pure denotational precondition.
+M2: Recommend embeddings for structural extension and typed substitutions/result
+correspondence when deduplication is not an embedding.
+M3: Define one wave over flattened rows across parents; sum separate wave bounds.
+M4: Internal gates are S1a, S1b-c types/fixtures, S1d laws. S2a may experiment after the
+type gate but S3/S4 cannot close before S1d.
+L1: Correct resolved-IR wording and distinguish PlanDenotesResolved from the composed
+OperationPlanDenotesSurface relation. Review status remains pending final assessment.
+
+Additional design clarification: S4b batches existing Task.project field-call nodes
+across filtered task rows of owned projects. The prior draft's internal task-ID loads
+would have required inspecting opaque Project.tasks implementations or adding loader
+primitives. The chosen target fits the declared field-call interface without that
+hidden extension. Deduplication requires a key-sufficiency theorem for owned tasks
+with the same scoped projectId. Earlier Project.tasks work is explicitly outside this
+stage's call reduction; whole-query counts must include it separately.
+
+FINAL ASSESSMENT
+Source: s1-grafast-claude-closure.txt (preserved unchanged).
+Verdict: S1a-S1d may begin; all prior findings resolved; no S1 blocker remains.
+Its remaining wording corrections are now incorporated without starting implementation:
+C1: The reduced-count theorem requires an eligible present batch capability and counts
+all single and batch primitives for the transformed load. The fallback is excluded.
+C2: The S2a capability slot carries the optional deduplication key and its sufficiency
+law for the actual backend. S2b preserves both. Eligibility/equivalence require that
+law alongside pointwise batch refinement, and U uses that exact key. Scope is a runtime
+context token, not captured principal records. This slot is part of the early S2a
+experiments before contracts are frozen.
+Nested gather/scatter composition is an explicit S1d law for project/task row nesting.
+Review status links and the historical S0 review wording were updated.

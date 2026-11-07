@@ -1,0 +1,40 @@
+= S4b review resolution
+
+M1: added `Batch.count_bind` and `BatchAccounting.lean`.
+`reference_accounting_any` and `optimized_accounting_any` decompose the actual
+whole emitted programs for any resolver, with their actual prepared values and output
+continuations. `reference_total` and `optimized_total` specialize to the certified exact
+driver; their output terms are then the same by response-stage equivalence.
+`total_savings` gives exact whole-program accounting, and `dispatcher_total` connects
+it to the recognized public entry. Arbitrary inconsistent answers may change output
+work, so only the exact driver gets the shared-output savings theorem.
+
+The native benchmark now counts both Batching.execute and original Runtime.execute,
+as well as their selected stages. Kernel fixture `whole_path_counts` gives 9 and 12
+whole-program calls at capacity 2. Setup and output are counted, not assumed absent.
+The generic whole-program reference accounting theorem concerns the staged reference;
+the original Runtime count is separately pinned on the workload.
+
+M2: narrowed the status explicitly. Ownership/representative/compatibility lemmas are
+pure generated-adapter ingredient facts; they are not Sat for the optimized machine.
+Recorded the S6 prerequisite: optimized fault-contract Sat for permitted preparation
+answers, owned representatives, compatibility, and positional fault reconstruction.
+Whole-batch transport failure requires its own declared outcome and must not be silently
+scattered as equivalent per-key failures. No faulting/external handler is attached here.
+
+L1: `IR.lower_clean` and `IR.checked_unique` prove uniqueness of clean checked operations
+for a surface selection. `execute_eq_runtime_any` now proves dispatcher equivalence
+for arbitrary deterministic adapters without BindingAgreement. The old agreeing version
+is a corollary, and domain agreement remains required for independent authorization.
+
+L2: `wrongPositionWave` changes the actual wave's scatter continuation to select position
+zero for every occurrence. `wrong_wave_rejected` proves it differs from the real wave;
+`wrong_wave_loses_errors` proves this mutant loses the fixture's three errors. A new
+compile-rejection fixture attempts equality of these actual wave programs.
+
+L3: the default demo computes and checks whole-program counts; it no longer prints a
+fixed improvement claim. The benchmark also computes its distinct-key count.
+
+L4: retained the explicit recognition limits and checked-child lowering description.
+No generic graph optimizer, recursive child optimization, physical-request equivalence,
+or latency claim was added.

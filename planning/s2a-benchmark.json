@@ -1,0 +1,25 @@
+{
+  "scope": "Fresh kernel WellFormedSchema and Represents certificates; excludes parsing, generation and runtime execution.",
+  "toolchain": "leanprover/lean4:v4.33.0",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "measurements": {
+    "small_tenant": {
+      "exit_code": 0,
+      "seconds": 0.79,
+      "max_rss_bytes": 1349517312,
+      "log": ".lake/s2-benchmark/small_tenant.log"
+    },
+    "mixed_profile": {
+      "exit_code": 0,
+      "seconds": 0.741,
+      "max_rss_bytes": 1350762496,
+      "log": ".lake/s2-benchmark/mixed_profile.log"
+    },
+    "scalar_300_objects_3000_fields": {
+      "exit_code": 0,
+      "seconds": 18.28,
+      "max_rss_bytes": 5574524928,
+      "log": ".lake/s2-benchmark/scalar_300_objects_3000_fields.log"
+    }
+  }
+}

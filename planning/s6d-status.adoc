@@ -1,0 +1,100 @@
+= S6d: certified narrow HTTP handler
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+
+Status: CLOSED, 2026-11-07. Claude independently confirmed no blockers remain in
+link:s6cd-claude-closure.txt[closure review]. The initial acquisition-contract blocker
+was fixed and independently rechecked. See link:s6-status.adoc[full S6 status].
+
+== Exact-input certificate and route
+
+`Protocol.prepareRequest` performs media/method/content checks, body and query limits,
+JSON/envelope decoding, parsing, operation-name matching, bounded P2 validation, and
+variable coercion before authentication or snapshot acquisition. A Ready value carries
+the validated Prepared operation and independent VariablesMeaning evidence.
+The parser and JSON-envelope decoder remain tested boundaries: no source-text fidelity
+theorem is claimed. The decoded operation must pass the proved P2 checks.
+
+`Handler.Authenticate` takes an explicit AuthSound relation and returns evidence for the
+credential/principal pair it supplies. An external identity provider must justify its
+producer; the library does not prove facts about an opaque service. The demo uses two
+fixed bearer tokens for tenants 1 and 2, solely as a concrete test policy, not a
+production authentication mechanism.
+
+`Acquire` similarly takes an explicit AcquireSound relation and must return a snapshot
+with evidence for that principal/store relation. The demo fixes its store by equality
+with S4bProofs.request.snapshot. GoodReply and promote retain this evidence all the way
+to Http.Outbound, using the same snapshot as the authorization proof. An unrelated
+snapshot cannot be promoted under the demo policy (HandlerUnacquiredSnapshot).
+External snapshot acquisition soundness is an explicit producer obligation alongside
+AuthSound and backend refinement, not a theorem about an opaque database.
+
+`runTenantProgram` prepares, authenticates, acquires one immutable Snapshot, constructs
+the backend for that context, calls the certified optimized execution entry and
+encodes its result. `authenticatedCore` returns `CoreReply ready context`; its CoreGood
+judgment fixes the exact principal AND snapshot in the type. Success combines variable
+and key meanings with independent AuthorizedWireResponse. Public failures use a closed
+error builder receiving no snapshot or exception string. The full GoodReply judgment
+also carries successful preparation, AuthSound evidence for the input request, and
+AcquireSound evidence for the exact snapshot.
+
+`Http.Outbound` admits only certified public failure replies or proof-carrying program
+results. Its index retains the incoming Authorization header, and a wrapped program
+request must prove its credential equals that header. A foreign-credential wrapper
+is a compile rejection. `Http.respond` sends precisely those bytes via LeanIO's fromBytes. There is no
+raw resolver or second serializer in this route. Stream-read failures use the same
+public builder. Outer handler/program catches and the transport wrapper discard
+exception payloads. Whole transport failure is not fabricated as per-key field errors.
+`CertifiedBatchExecution.transport_rejected_without_backend` closes the S6b carryover.
+
+== Executable and policy
+
+[source,sh]
+----
+scripts/lake build
+.lake/build/bin/graphql-certified 8081
+curl http://127.0.0.1:8081/graphql -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer tenant-1' -d '{"query":"{ projects { title } }"}'
+scripts/check
+scripts/check --http-certified
+scripts/check --http-legacy
+----
+
+The certified P2 profile retains S5's restricted tenant operations: no aliases,
+fragments, directives, mutations, subscriptions or general schema support. GET on
+/graphql yields 405; POST executes. Other router paths/methods use LeanIO defaults
+outside the certificate. JSON media types are negotiated. Malformed body/envelope/
+syntax yields 400, validation/variables/operation-name failures 422, absent auth 401,
+transport/snapshot absence and caught backend exceptions 503, auth/acquisition/outer
+exceptions 500; completed executions use
+200, including GraphQL faults. Body limit is 65536 bytes, query limit 32768 characters;
+P2 retains its variable/selection/depth limits. This is a narrow compatibility policy,
+not full GraphQL-over-HTTP conformance.
+
+Launch modes auth-throw, snapshot-throw, snapshot-none, backend-throw and transport are
+local integration-test configuration (second CLI argument), not request switches.
+No database or external identity adapter has been certified.
+
+== Evidence and trust boundary
+
+Native fixtures check preparation before effects, one authentication and one snapshot
+per successful request, zero backend work for variable rejection, and nine primitive
+calls for the actual batch route (versus twelve in the reference workload).
+`rejected_before_effects` is a kernel theorem conditional on public preparation failure;
+the parser itself is not kernel-evaluated. A second variable rejection inside the
+authenticated core is eliminated by contradiction using ready.interpreted and the
+variable-coercion completeness theorems. The generic transport rejection theorem
+applies to arbitrary monads. Foreign-snapshot answers fail the actual resolver Post,
+even with the same tenant and key. Wrong-principal and raw-body construction are
+compile rejections. No custom proof dependencies or proof escape hatches are allowed.
+
+Thirty real loopback HTTP checks cover tenant isolation, batch error paths/root-null,
+variables, argument faults, public early failures, media/body limits, and authentication,
+snapshot and backend exception redaction. Thirty-five legacy HTTP checks guard the
+shared encoder. These are tests of native IO, not proofs of native execution, network
+delivery, termination, liveness, scheduling, cancellation, or resource bounds. The
+certificates establish safety of returned values conditional on the declared identity, acquisition
+and backend evidence; they do not establish observational noninterference for all IO.
+
+Full local gate: scripts/check passed 696 proof-dependency reports and 48
+compile-rejection fixtures, plus native semantic tests and generated-code checks.

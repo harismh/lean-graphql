@@ -1,0 +1,107 @@
+S3 CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s3-claude-review.txt (B1, H1, M1-M3, L1-L3), s3-review-resolution.txt,
+s3-status.adoc.
+
+Read:
+- Example/Tenant/CompiledContract.lean and Example/Tenant/OutputEvidence.lean, all of each.
+- ResponseContract.independent_derivation.
+- The new S3Proofs fixtures: foreign_call_uncertifiable, unguardedAdapter, title_completion_contract.
+- BoundedExample.runRows and program_completion_response.
+- Tests/ContractRemovedGuard.lean and its check.py pin.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s3-closure.out:
+- 302 audit reports. Only the allowed axioms appear.
+- All 21 expected compile failures pass.
+- The SDL and semantic tests pass.
+No implementation file was edited, and no agents were started.
+
+VERDICT: S3 IS CLOSED. THE S2a H1 GATE WAS ALREADY CLOSED (s3-claude-review.txt).
+The remaining items are S4 obligations. They are listed below and do not block S3.
+
+FINDING STATUS
+B1 RESOLVED.
+   compiled_certificate is proved by induction on IR.Resolved, over the actual compileFor graph,
+   for every resolved selection, parent and request with the parent invariant.
+   - Every call node discharges `ready` through exact_call or exact_branch_call.
+   - The argument-error branch is a map and needs no precondition.
+   - Each region body is certified per row. Its precondition is derived, not assumed:
+     branch_rows_owned proves ObjectInvariant for each row of branchRows from expected_owned, for
+     all four branch fields and both error cases. The captured request is the one threaded
+     through Capture.read.
+   - The postcondition, ExactFrame, fixes the whole frame (every output reference, every region
+     frame list, in order) to the Expected denotation. It is not a final-response premise.
+   compiled_frame_invariant composes it with tenantResolvers_satisfy_contracts through
+   graph_proof_sound, for every agreeing adapter. With a Unit root and invariant True, every
+   reachable call in every compiled P1 plan meets its business precondition, and every
+   intermediate value equals the independent domain computation.
+   foreign_call_uncertifiable refutes `ready` for a call on a literal foreign record through
+   node_certificate_ready, so the certificate is not vacuous.
+   This is stronger than the minimum my addendum asked for.
+H1 RESOLVED for the deterministic contracts; one note for S4 follows.
+   - RowFor relates a record to an explicit source occurrence. RowsFor keeps it positionally
+     through RelatedLists, so duplicates are distinct.
+   - branch_rows_correspond proves that correspondence for branch rows through transport, without
+     searching occurrences by record equality.
+   - render_frame_evidence holds for an arbitrary frame satisfying ExactFrame with a RowFor root
+     and ownership. It gives a Rule derivation whose erasure equals the actual render, and it has
+     no final-response premise.
+   Note: the proof is the exactness route. ExactFrame plus compiled_transport, compile_for_correct
+   and resolved_denotation reduce render to evalFields. The derivation then comes from S1a's
+   eval_fields_authorized and the new converse independent_derivation (AuthTree to Rule). That is
+   sound and not circular, since it rests on proved S1a consistency, not an authorization
+   assumption. But it holds only for exact frames, and it does not build derivations locally per
+   output constructor from row evidence. See S4-1.
+M1 RESOLVED for S3. program_completion_response puts the plan's denoted output (runRows) through
+   collect completion and ResponseJudgment in one statement. The bound comes from computing the
+   backend (completed_bound, replicate_judgment), not from plan_certificate. Getting the bound
+   through the contract route is S4's items(first:) acceptance. title_completion_contract
+   instantiates ResultSpec for the tenant: Project.title's postcondition through renderLeaf.
+M2 RESOLVED. unguardedAdapter replaces Query.project with an ID-only find? over an actual record.
+   unguarded_backend_rejected proves ¬ BackendSatisfies on the Checks snapshot, where the
+   foreign "shared" project comes first.
+M3 RESOLVED. ContractRemovedGuard now asserts only AllowedOutcome for the foreign project. The
+   pin requires the false tenant proposition, so the fixture tests the ownership conjunct.
+L1-L3 RECORDED in status: compatible is still pointwise until S4b/S6; the fault contract has the
+   shape `exact ∨ declared framework failure`; the status cites the compiled certificate.
+
+WHAT S3 ESTABLISHES (pure; every request, every agreeing adapter, every checked P1 operation)
+- actual_response_eq, actual_response_authorized, actual_response_conforms: the actual record
+  bindings produce EvalSpec, which is authorized and conforms (the S2a H1 gate).
+- A generic contract calculus over every graph node form, with graph_proof_sound. Whole-list
+  predicates are expressible and are not implied by elementwise validity.
+- tenantResolvers_satisfy_contracts: exact domain behavior plus ownership or a public failure,
+  for every field. Root IDs are unrestricted, and child preconditions need an owned parent.
+- compiled_certificate and compiled_frame_invariant: every reachable call meets its precondition,
+  with rows carrying the ownership the next call needs.
+- render_frame_evidence and response_authorized: certified frames render to a response with a
+  Rule derivation, which implies the independent S0 AuthTree and AuthorizedResponse.
+- Mutation evidence: ownership removed from an actual resolver, a wrong projection, private
+  failure text, an unproved map, and an uncertifiable foreign call.
+
+REMAINING S4 OBLIGATIONS (executor and faults; not S3)
+S4-1 Output evidence for non-exact frames. The fault extension (L2) lets a call return a
+     declared framework failure instead of the Expected outcome. Such frames are not ExactFrame,
+     so render_frame_evidence does not apply as proved. S4 has two choices:
+     (a) Prove a local render lemma for each output constructor: a leaf, object or list
+         consumes the row (RowFor) and outcome evidence and produces its Rule step (including the
+         framework rule). branch_rows_correspond already supplies the row positions this needs.
+     (b) Prove that a fault frame equals an exact frame with some subtrees replaced by declared
+         failures, and that render commutes with the replacement.
+     Either way, the derivation must not rely on EvalSpec equality for faulting runs.
+S4-2 Machine: LawfulMonad, Sat rules for bind and list traversal, and the sequential graph
+     interpreter refining denoteGraph. That covers each, gather, scatter, fromLists, vectorLoad
+     (pointwise) and mapRows, plus output reconstruction.
+S4-3 Deterministic route: the interpreter equals plan denotation. Then actual_response_eq gives
+     equality with EvalSpec, so authorization and conformance need no Sat.
+S4-4 Fault route: Sat using compiled_certificate's preconditions and the relaxed postconditions
+     (exact success rows kept), then S4-1 to get AuthorizedResponse. Instantiate it twice:
+     tenant authorization, and the items(first:) list bound with no tenant facts. In the second,
+     the bound should come from the certificate, not from computing the backend (M1 note).
+S4-5 The argument-error branch issues no resolver call in the executor (already true in the
+     plan). Error paths and multiplicity through bubbling. All four list/nullability
+     combinations.
+Later: S2b argument names and layouts (G1-G5), S4b batch compatibility, strategy and cost bound,
+S5 coercion, S6 effectful batch interface and handler.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s3-claude-closure.txt

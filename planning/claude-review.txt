@@ -1,0 +1,197 @@
+INDEPENDENT REVIEW: LEAN-GRAPHQL DEVELOPMENT PLAN
+Reviewer: Claude (Opus 5.5). Date: 2026-11-01. Scope: plan only; no implementation.
+
+VERDICT: APPROVE WITH CHANGES. Direction is sound; do not start P0 as written.
+Trust-boundary discipline is strong. The gaps are structural: six blockers, all fixable
+in the plan, and P0 as written cannot detect the likeliest failure (scale).
+
+VERIFICATION STATUS
+No Lean toolchain exists on this machine. NOTHING WAS COMPILED; all Lean feasibility
+statements below are engineering judgment unless tagged [source].
+Read at source and confirmed [source]: LeanIO pin (v4.33.0, 0.6.0); ContextAsync handlers;
+Json extractor's unbounded readAll and 422 semantic errors; async-graphql 7.2.1; OneOf in
+September 2025. Not checked: extractor's text-error serialization, and the two
+lean-lang.org reference citations.
+
+BLOCKERS (resolve before or inside P0)
+
+B1. The proof/runtime seam is undecided (lines 83, 114).
+"A callback effect interface" is not enough. A theorem at m = Id does not transfer to
+ContextAsync: Lean offers no parametricity theorem, so a monad-generic executor leaves
+exactly the refinement gap P4 proposes merely to document.
+Correction: make execution a pure, sans-IO machine, for example
+  start : Plan -> Vars -> Machine
+  step  : Machine -> Outcome(s) -> Machine + pending ResolverCalls + final Response.
+Prove theorems over this machine for an arbitrary oracle of resolver outcomes. The runtime
+becomes a small, explicitly unverified loop. Benefits: pending calls form natural batches
+(DataLoader), and sequential and concurrent modes share one core. Theorem 5 then covers
+shipped code, and an order-independence theorem can be stated for query fields. Decide in
+P0, not P4.
+
+B2. The evidence mechanism and its scale are unspecified (lines 29, 51, 82, 106).
+"CheckedSchema with validity evidence" needs a chosen route: per-fact generated proofs,
+kernel reflection, or native_decide. Recommend reflection: a Bool checker, one soundness
+theorem, and `decide +kernel` per schema (trusted kernel, no ofReduceBool). Consequences
+to design for now: the checker must reduce in the kernel, so avoid well-founded recursion
+(irreducible by default), `partial`, and hash-based structures; intern names to numeric
+IDs early. Add a fallback: native_decide as an opt-in, separately labelled tier.
+A recursive User schema proves none of this. See the P0 gates below.
+Also fix the audit (line 82, 121): `#print axioms` does not reveal `implemented_by` or
+`@[extern]` substitution, and `partial` defs are opaque to proofs. Add a lint forbidding
+these in the proof-covered module closure, with a reviewed allowlist.
+
+B3. The generated-to-generic bridge is undefined (lines 60, 63, 65).
+Developers see concrete records; the executor is generic over S. Something must connect
+them, and it is the riskiest Lean design point. A type computed as
+`ResolverType S obj field` stays stuck or unfolds a huge constant, breaks instance
+synthesis, and yields unreadable errors. A binding holding `carrier : ObjId -> Type` lives
+in Type 1, so it cannot be returned through `Async : Type -> Type` or stored in an IO.Ref
+(sigma values over a fixed family remain in Type 0, so runtime object values are fine).
+Correction: keep S opaque to unification (irreducible or sealed). Have the generator emit
+concrete resolver signatures plus an erased adapter into a uniform internal resolver type,
+with per-field agreement proved by construction. P0 must exhibit this bridge, end to end.
+
+B4. Interfaces and unions cannot be "scheduled based on prototype cost" (line 118).
+They determine resolver result carriers, runtime type resolution, fragment applicability,
+CollectFields, SameResponseShape, and `__typename`. Retrofitting invalidates the core and
+its proofs. Correction: include them in the Core model and P0 from day one; one interface
+and one union, with resolvers returning a generated closed sum so membership holds by
+construction. Keep OneOf schedulable, but note the claimed baseline includes it.
+
+B5. Argument coercion is wrongly placed (lines 53, 65, 76).
+The runtime path coerces variables, then builds a plan, then resolvers receive "coerced
+arguments". Two faults:
+(a) CoerceArgumentValues runs per field during execution and can raise an EXECUTION error
+[source: spec, CoerceArgumentValues]. Example: `query($v: Int = 1)
+{ f(a: $v) }` with `a: Int!` validates, yet a client-supplied explicit `{"v": null}` must
+yield a field error at `f`, with propagation, not a request error. A coerced-arguments
+guarantee before execution is false.
+(b) @skip/@include and argument values depend on variables, so a post-coercion plan is
+per-request and defeats the plan cache (line 45).
+Correction: build a variable-parametric plan after validation and operation selection;
+cache that. Treat argument coercion as a machine step whose failure enters the
+completion/error path. Extend theorem 3 and theorem 5 accordingly.
+
+B6. Milestones contradict their dependencies (lines 108-114).
+P1 needs an SDL parser, but the lexer/parser sits in P2. Introspection sits in P4, yet
+`__schema`, `__type`, and `__typename` must exist for validation (P2) and execution (P3).
+`__typename` is valid even on unions.
+Correction: move the shared lexer/parser with spans to P1. Define meta-fields in Core and
+P2/P3; P4 only exposes them. Add a thin walking skeleton before broadening any layer.
+
+HIGH PRIORITY (fix in plan; not architecture-breaking)
+
+H1. Lean.Json is unsuitable at both ends (lines 70, 80).
+[source] The Lean JSON parser builds `Std.TreeMap.Raw String Json`: keys are ordered by
+the map, duplicates silently take the last value, and parsing is `partial` recursion with
+no visible depth limit. The spec requires response keys to retain selection order
+textually. Correction: write a dedicated streaming response encoder from the typed
+response, making order part of theorem 7; add a bounded request JSON path with a depth
+limit and a stated duplicate-key policy. JsonNumber keeps precision, which is useful for
+Int-versus-Float coercion, but test `1.0` for Int: the spec treats an empty fractional
+part as integer input.
+
+H2. Concurrency primitives conflict with GraphQL error semantics (lines 78, 98-99).
+[source] `ContextAsync.concurrentlyAll` cancels all siblings on any thrown failure, and
+cancellation is cooperative. Used directly, one resolver's IO exception kills nullable
+siblings. Correction: convert every throw to a field outcome at the resolver boundary;
+cancel only as the spec permits under non-null propagation. Non-cooperative resolvers
+are not preemptible, so state that deadlines bound the response, not the work.
+Spec permits cancelling unexecuted siblings [source], so with concurrency the error list
+is underdetermined. State theorem 5 as a relation over outcomes, not a function, and treat
+errors as a multiset. Theorem 6 must also decide: after a non-null top-level mutation field
+fails, do later mutations run? The spec's "may be cancelled" allows either. Choose "stop"
+and document it.
+
+H3. The HTTP plan misses current draft specifics (lines 96-97).
+[source, draft text as fetched today; the draft moves, so pin it]
+- Partial results: SHOULD use status 294, unregistered, and infrastructure may mishandle
+  it. Expose a compatibility setting. Legacy `application/json` keeps 2xx-only rewriting.
+- JSON parse failure and document parse failure: 400. Malformed envelope, validation,
+  ambiguous operation, and variable coercion failure: 422.
+- GET mutation: 405 with `Allow`. This requires parsing and selection before the method
+  decision, so it belongs after operation selection, and 4xx halts execution.
+- CSRF: refuse simple-request media types; consider GraphQL-Require-Preflight.
+Good news: Std's `readAll` already accepts `maximumSize` [source]. The generic extractor
+just omits it. It throws a userError, so map that to 413 deliberately. `IntoResponseExt`
+receives the request, enabling negotiation. Whether disconnect reaches the handler's
+context is UNVERIFIED; keep it in the spike.
+
+H4. Validation and fragment cost is a security issue (lines 77, 98).
+Naive OverlappingFieldsCanBeMerged is expensive, and fragment fan-out makes inlining
+exponential even when acyclic. Correction: run cycle detection first, with evidence
+supporting termination; impose token/depth/expanded-size limits before inlining; share
+fragments in the plan. Prove the efficient merge check against the spec relation, or
+keep the checked spec algorithm plus limits first, and optimize later.
+
+H5. Sharpen the proof statements (lines 73-80).
+- Theorem 1: define faithfulness as `erase (elaborate ast) = normalize ast`, with normalize
+  specified, covering `extend` merging and ordering.
+- Independent predicates can repeat the same misreading. Make them decidable and run them
+  on conformance fixtures, connecting spec tests to the relation, not only the checker.
+- Prefer extrinsic `Conforms sel ty v` over dependently typed responses. Use intrinsic
+  typing for scoped IDs and wrappers. Intrinsic response types add cost without
+  strengthening the claim.
+- Float is opaque to the kernel: finiteness is a runtime-checked fact and little can be
+  proved about arithmetic. State that in the coverage table.
+- Custom scalar serializers must return Except; failed result coercion is a field error
+  and belongs in theorem 5 (line 69 implies but does not state this).
+
+H6. Build integration is unaddressed (lines 44, 55).
+[source] `include_str` simply reads the file and registers no dependency; a similar SDL
+command risks stale builds unless declared as a Lake input. Lake behavior itself is
+UNVERIFIED. The checker must run at elaboration time, so module-system meta phases and
+interpreted-versus-precompiled speed need measurement. Keep generation a pure
+`CheckedSchema -> declarations` function, so a command and a file-emitting tool can share it.
+
+H7. Schema-first ergonomics need a contract (lines 64, 116).
+Require: all missing resolvers reported at once, SDL spans plus Lean positions, a generated
+skeleton ("Try this"), readable hover signatures, and an explicit projection rule.
+Sequential-first execution (line 99) gives DataLoader no batching window; B1 resolves this.
+
+ENDORSED AS WRITTEN
+- SDL as sole source; no parallel code-first schema (line 36).
+- Finite graph with model carriers (lines 58, 62).
+- Missing/null/value distinction (line 68); explicit success/null/failure (line 81).
+- Non-vacuity relating output to input (line 73).
+- Stated non-claims (lines 84-85) and published coverage tiers (line 34).
+- Pinning, with an added upgrade policy: confine Std.Http and pre-1.0 LeanIO to the adapter.
+- Differential tests as evidence, not authority (line 124).
+
+OPTIONAL ENHANCEMENTS (not blockers; correctly deferred)
+Cost certificates, schema evolution, authorization capabilities, verified optimizations,
+compile-time typed client operations, Federation, subscriptions.
+
+REVISED FIRST MILESTONE: P0, Skeleton and Kill Gates (timebox 2-3 weeks; 1-2 is optimistic)
+Schema: recursive User, one interface, one union, one input object with a recursive list
+field, one enum, one custom scalar.
+Build:
+1. Minimal SDL and query parser with spans. Ugly internals acceptable.
+2. CheckedSchema via `decide +kernel` reflection (B2).
+3. Generated signatures and erased adapter (B3).
+4. Sans-IO machine: fragments on abstract types, skip/include, per-field argument coercion,
+   null/list propagation (B1, B4, B5).
+5. Proved: one [T!]!-style propagation theorem on the machine; one non-vacuous checker
+   soundness lemma; both with the extended audit.
+6. Runtime loop plus real LeanIO POST: bounded body, ordered custom encoder, negotiated
+   media type, a throwing resolver beside a nullable sibling, and disconnect probing.
+Gates (proposed thresholds; revise after first measurement):
+G1. A synthetic schema of 300 types / 3,000 fields checks in the kernel in under 60s clean,
+    with memory recorded; failure triggers redesign or the native tier, explicitly labelled.
+G2. Incremental rebuild of a one-resolver edit stays under 10s and does not re-run the
+    schema proof; an SDL edit does trigger rebuild.
+G3. Wrong and missing resolver errors are legible to a developer who has not read Core.
+G4. Example application contains zero proof terms and zero dependent types in user code.
+G5. Mutually recursive input declarations and derivations work on v4.33.0 (`structure`
+    within `mutual` is UNVERIFIED; fall back to single-constructor inductives or the
+    generic indexed representation).
+G6. Trust ledger lists every shipped function, its coverage, and its assumptions.
+Replace the "no foundational semantic mismatch remains hidden" exit, which is unfalsifiable,
+with these gates. If G1, G3, or G4 fails, change the architecture before P1.
+
+Later milestones: P1 gains the parser; P2 gains meta-fields and the parametric plan; P3
+proves the machine, abstract types included; P4 reduces to adapter and runtime hardening.
+
+COULD NOT VERIFY
+All Lean elaboration, kernel, universe, and performance claims (untested); Lake input
+tracking; disconnect propagation; 294 handling by real clients and proxies.

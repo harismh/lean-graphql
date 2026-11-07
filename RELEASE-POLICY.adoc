@@ -1,0 +1,81 @@
+= Release scope and compatibility promise
+
+== Intended 1.0 contract
+
+lean-graphql is a proof-oriented GraphQL framework in Lean 4. The intended 1.0
+release offers a stable foundational API and a reproducible certified reference
+application. It does not promise arbitrary application certification or complete
+GraphQL specification coverage. This policy defines the intended release contract;
+the package remains at 0.0.1 until release preparation and validation are complete.
+
+The stable source API consists of public declarations defined in
+`GraphQL/Schema.lean`, `GraphQL/Response.lean`, and `GraphQL/Machine.lean` at the
+1.0 tag. This includes their constructors, structure fields, function types,
+theorem statements, default argument and field values, and the availability of
+their typeclass instances (not compiler-generated instance names).
+Importing `GraphQL` or a stable module does not make its transitive imports stable.
+The observable behavior of stable declarations remains covered even when an
+experimental module implements it, including the output of response encoding.
+Compiler-generated auxiliary names and proof implementation details are excluded.
+
+Within 1.x, supported downstream code using that API should continue to elaborate
+on the same pinned Lean toolchain. Patch releases fix defects without intentional
+source incompatibility; minor releases add compatible APIs. Removing declarations,
+changing constructors or theorem hypotheses, or changing documented semantics
+requires a major release. Downstream code depending on proof terms, internal
+unfolding, or compiler-generated names is outside this compatibility promise.
+An incompatible Lean toolchain upgrade also requires a major release; compatible
+upgrades, under which code within this promise still elaborates, must be validated
+and documented. Dependency revisions remain pinned in
+the manifest. No ABI or cross-toolchain artifact compatibility is promised.
+
+== Certified reference application
+
+The tenant application demonstrates a complete proof chain for its supported
+query profile: independent authorization semantics, checked-plan execution,
+deterministic batching equivalence and primitive-call counts, permitted-fault
+safety, and ordered JSON response encoding through the certified handler.
+These guarantees are conditional on the hypotheses of the shipped theorems,
+including the same principal and snapshot and the required backend contracts.
+Every 1.x release must preserve this chain and its documented guarantees.
+Narrowing a guarantee requires a major release and an explicit release note;
+the experimental status of the application's Lean APIs does not waive this rule.
+The guarantees are stable even though their theorem names and source interfaces
+may change while those APIs remain experimental.
+
+The certified route currently supports the tenant schema, one query operation,
+and its supported variables and defaults. Aliases, fragments, directives,
+mutations, subscriptions, Federation, and arbitrary application schemas are
+outside that route's promise. The broader legacy prototype has separate coverage.
+The reference application's source APIs, graph compiler, metaprogramming/codegen,
+LeanIO integration, and all other modules remain experimental unless explicitly
+promoted to the stable API above. Experimental changes must be called out in
+release notes even when they do not require a major version.
+
+Parser and HTTP integration behavior is tested, not proved end to end. Identity
+providers, snapshot acquisition, and backend producers must satisfy the declared
+contracts. Lean's kernel and the native runtime are trusted boundaries; network
+delivery, liveness, concurrency, cancellation, and wall-clock performance are not
+proved. The demo's fixed credentials and in-memory store are not a production
+deployment configuration. New applications need their own specifications and proofs.
+
+== Release evidence
+
+Before tagging a release, run `scripts/lake test -- --all` on a clean checkout
+using `lean-toolchain` and the pinned manifest. Record the platform, toolchain,
+results, and any limitations in the release notes. Compile a separate minimal
+Lake consumer against the stable API, requiring package `leanGraphql` from its
+Git URL at the exact candidate revision rather than using this checkout's build
+artifacts. CI is intentionally not part of this setup;
+these checks are a manual release gate and are not waived by the absence of CI.
+
+Keep milestone status, final reviews, and referenced supporting evidence in Git.
+Do not commit raw agent transcripts, scratch work, local toolchains, or build
+outputs. Release claims must distinguish kernel-checked theorems, runtime checks,
+and external assumptions. The project is an autonomous AI development experiment;
+AI review is additional scrutiny, not a substitute for those checks.
+
+See link:README.md[the examples and current scope] and
+link:planning/proof-first-roadmap.adoc[the milestones and proof obligations].
+Project source is distributed under link:LICENSE[the MIT license]; dependencies
+retain their own licenses.

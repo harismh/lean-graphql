@@ -1,0 +1,33 @@
+{
+  "toolchain": "Lean 4.33.0",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "types": 300,
+  "fields": 3000,
+  "notes": "Single runs, no performance guarantee. Explicit-data check excludes codegen; generated_schema includes all 3000 resolver contracts and dispatchers. Resolver-only measurements compile a 10-field Query implementation importing the 300-type generated module, not a complete application.",
+  "explicit_data": {
+    "exit_code": 0,
+    "output": "'largeChecked' depends on axioms: [propext, Classical.choice, Quot.sound]\n",
+    "seconds": 13.887,
+    "max_rss_bytes": 5431951360
+  },
+  "generated_schema": {
+    "exit_code": 0,
+    "output": "'Large.schema' depends on axioms: [propext, Classical.choice, Quot.sound]\n",
+    "seconds": 27.589,
+    "max_rss_bytes": 5715132416
+  },
+  "resolver_initial": {
+    "exit_code": 0,
+    "output": "",
+    "seconds": 0.623,
+    "max_rss_bytes": 1357578240
+  },
+  "resolver_incremental": {
+    "exit_code": 0,
+    "output": "",
+    "seconds": 0.612,
+    "max_rss_bytes": 1355235328
+  },
+  "schema_artifact_reused": true,
+  "workload": "300 object types, each with ten String! fields; no arguments or input/abstract types."
+}

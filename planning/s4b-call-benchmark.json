@@ -1,0 +1,38 @@
+{
+  "scope": "Native Machine counts for both selected Task.project stage and whole dispatched/reference programs. Whole counts include root, tasks, and child-selection calls. No physical-request, hidden-lookup or latency claim.",
+  "workload": "Five filtered task occurrences across two nonempty project parents, three distinct project keys, repeated success and failure keys; two additional empty parents and a filtered foreign parent.",
+  "measurements": [
+    {
+      "capacity": 1,
+      "distinct_keys": 3,
+      "reference_calls": 5,
+      "optimized_calls": 3,
+      "whole_reference_calls": 12,
+      "whole_optimized_calls": 10
+    },
+    {
+      "capacity": 2,
+      "distinct_keys": 3,
+      "reference_calls": 5,
+      "optimized_calls": 2,
+      "whole_reference_calls": 12,
+      "whole_optimized_calls": 9
+    },
+    {
+      "capacity": 3,
+      "distinct_keys": 3,
+      "reference_calls": 5,
+      "optimized_calls": 1,
+      "whole_reference_calls": 12,
+      "whole_optimized_calls": 8
+    },
+    {
+      "capacity": 4,
+      "distinct_keys": 3,
+      "reference_calls": 5,
+      "optimized_calls": 1,
+      "whole_reference_calls": 12,
+      "whole_optimized_calls": 8
+    }
+  ]
+}

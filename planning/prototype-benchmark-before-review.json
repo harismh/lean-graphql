@@ -1,0 +1,15 @@
+{
+  "toolchain": "Lean 4.33.0",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "types": 300,
+  "fields": 3000,
+  "scope": "Explicit schema data plus kernel evidence; excludes generating 3000 resolver declarations.",
+  "proof_exit_code": 0,
+  "proof_seconds": 16.483,
+  "proof_output": "'largeChecked' depends on axioms: [propext, Classical.choice, Quot.sound]\n",
+  "child_max_rss_bytes": 5403770880,
+  "incremental_exit_code": 0,
+  "incremental_seconds": 0.907,
+  "schema_artifact_reused": true,
+  "incremental_output": "\u2714 [11/11] Built Example.Resolvers (747ms)\nBuild completed successfully (11 jobs).\n"
+}

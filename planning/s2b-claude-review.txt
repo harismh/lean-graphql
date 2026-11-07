@@ -1,0 +1,201 @@
+S2b REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against:
+- roadmap "S2b Generate the shape that the proofs exercised" and S2a acceptance;
+- gates G1-G5 in planning/s2a-claude-closure.txt;
+- planning/s2b-status.adoc.
+
+Read in full:
+- GraphQL/Plan/Arguments.lean, Generate.lean, SchemaEvidence.lean.
+- Example/Tenant/Generated.lean, ArgumentProofs.lean, S2bProofs.lean, GenerationFixture.lean.
+- The indexedSchema/argumentLayouts change in Schema.lean.
+- tools/GenerateTenant.lean.
+- scripts/generate_s2b.py and benchmark_s2b.py, plus planning/s2b-entry-benchmark.json (data
+  inspected; benchmarks not rerun).
+- The three new rejection tests: ArgumentLayoutSwap, ArgumentProjectionSwap,
+  ArgumentAccessorSwap.
+- The check.py hooks, and Demo.lean.
+Confirmed by timestamp that Example/Tenant/Bindings.lean (independentBindings, resolve*,
+taskProjectBatch) has not changed since the S4 closure.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s2b.out:
+- 442 audit reports: 373 with axioms (propext, Quot.sound, Classical.choice only) plus 69 that
+  use no axioms. No sorryAx.
+- All 26 expected compile failures pass.
+- The generator checks all pass:
+  - "generated SDL artifact reproduces exactly";
+  - "generator mutation: swapped dispatch AND metadata rejected";
+  - "generated reordered recursive schema, names, multiargument projections".
+- The native graphql-tenant regression passes, now on the generated adapter. The semantic and
+  SDL tests pass.
+- I read .lake/generator-tests/mutation.log (see L1).
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started, and no benchmarks were run.
+
+VERDICT: S2b MAY CLOSE. THERE ARE NO BLOCKERS AND NO HIGH FINDINGS.
+- The roadmap's S2b acceptance and G1-G5 are met as stated.
+- The generated route inherits the S4 theorems universally.
+- With S2b, the roadmap's first proved application milestone is reached.
+M1 is a scope and claim gap in argument identity at the resolver boundary. It should be fixed
+or narrowed in the status now, but it is not a soundness defect.
+
+GATE STATUS
+G1 MET (argument names and layouts in checked evidence). IndexedSchema.argumentLayouts holds
+   GraphQL.Argument lists, with names and original TypeRefs. FieldRepresents now requires
+   raw.arguments = layout (SchemaEvidence.lean:58-60), and checked_argument_layout exports this
+   (Arguments.lean:77-80). same_typed_layout_swap_rejected and Tests/ArgumentLayoutSwap.lean
+   show that reversing two String arguments fails representation.
+   Note: the layout is a checked copy. Argument identity is actually carried by
+   ast.types[o].fields[f].arguments (ArgumentRecord, argumentRef), so the layout field is
+   redundant, though harmless.
+G2 MET AS WORDED (projection agreement and a same-typed swap fixture).
+   - ArgumentRecord is a dependent function on the AST argument index (Arguments.lean:34-35).
+     packArguments is defined by argumentRef from the AST coordinate.
+   - Proved: ArgumentProjectionAgreement, argument_projection_unique, and both roundtrips
+     (Arguments.lean:45-75).
+   - NamedArgument carries a proof that the AST name at the index is the requested name
+     (Arguments.lean:83-85).
+   - Rejections: same_typed_argument_swap_rejected (with Tests/ArgumentProjectionSwap) and
+     accessor_name_swap_rejected (with Tests/ArgumentAccessorSwap).
+   - The broader generated fixture checks that a three-argument product (left, right,
+     limit: Int) projects each argument by name, and that omitted and null stay distinct
+     (generate_s2b.py:52-64).
+   - Because pack is canonical rather than emitted, a jointly swapped getter and packer cannot
+     redefine the target. That claim holds.
+   But see M1: these records are not on the execution path.
+G3 MET (independent inputs stay outside generator output).
+   - The artifact's `ast` is config.anchor (Binding.demoAst). The parsed SDL appears only as
+     emittedAst, with source_anchor: emittedAst = ast proved by decide +kernel
+     (Generated.lean:12-14).
+   - The binding family is config.bindings (Binding.independentBindings). The generator emits
+     no resolver code and no meaning.
+   - Bindings.lean is unchanged.
+   - dispatchMetadata is used by no theorem (Generated.lean:111-112).
+G4 MET, with a limit (L2). Two fresh runs each at 72 and 800 fields, with recursive object-list
+   outputs and two arguments per field, recording time and RSS for monolithic versus per-object
+   certificates.
+   - Monolithic won at 800 fields: 8.1 to 8.3 s against 12.9 to 13.3 s, at similar RSS.
+   - The per-object figures exclude composition cost, which only strengthens the conclusion.
+   - The status makes no broad scalability claim.
+G5 MET (batch capability preserved). Each FieldBinding passes through fromCanonical and
+   adapter whole. generated_batch_slot shows, by rfl, that Task.project's batch is
+   `some Binding.taskProjectBatch`, so its `exact` and key laws, indexed by the single
+   function, stay attached (S2bProofs.lean:35-36). No optimizer claim is made.
+
+ROADMAP ACCEPTANCE
+- "Mutate the generator itself to consistently swap both adapter mappings and its emitted
+  mapping metadata": MET.
+  - Config.mutateSwap goes through selectedIndex (Generate.lean:49-54, 94-99). It changes the
+    actual dispatch for Project.id to ⟨resolvers.gql_1_1_Project_title.single, none⟩, a
+    type-correct FieldBinding with title's single function, and changes dispatchMetadata to
+    "title".
+  - generate_s2b.py checks that both changes are present (generate_s2b.py:37-38), and that
+    compilation fails only within the adapter_agreement lines (lines 41-45).
+  - The unmutated artifact builds under the same proof script, so the failure is caused by the
+    mutation.
+- "Instantiate the existing S3/S4 proofs; do not re-prove the executor": MET.
+  generated_execution, generated_authorization, generated_conformance and
+  generated_tenant_view specialize run_eq_spec, run_authorized, run_conforms and
+  run_tenant_view to Generated.adapter Generated.application, for every request and checked P1
+  operation (S2bProofs.lean:12-33). The fault-route theorems depend on no adapter and apply
+  unchanged. The demo runs the generated adapter (Demo.lean:9).
+- "Use SDL and explicit model bindings": MET. GenerateTenant parses Binding.demoSDL. The
+  models, scope, error and binding references are trusted configuration inputs
+  (tools/GenerateTenant.lean:7-14), as the status states.
+- "Prove schema checker soundness and AST representation/normalization laws": MET at the
+  existing level: check_indexed_sound, canonical and field roundtrips, and the
+  argument pack/unpack laws. See L5 for a missing general encoding lemma.
+
+OBSERVATION (not a finding, but say it plainly)
+Generated.application is `fromCanonical Binding.independentBindings` (Generated.lean:123). So
+the runtime bindings are the agreement target itself, and application_agreement is reflexive.
+The substantive guarantees are elsewhere:
+(1) adapter_agreement is universal over every BindingsByField family, which means the generated
+    dispatch is the identity on canonical coordinates. The generator mutation tests exactly
+    this.
+(2) The domain meaning of independentBindings is proved independently, by S2a's
+    binding_agrees_s1 and S3's tenantResolvers_satisfy_contracts.
+That matches the roadmap ("Applications prove domain facts, while generation supplies
+representation plumbing"). It differs from S2a, though: there, a hand-written ResolverRecord of
+wrapper constants was checked against a separate target. The status should not suggest a
+separate user implementation is still being checked against a separate target.
+
+FINDINGS
+M1 (Medium) Generated argument records and named accessors are not on the execution path.
+   - FieldBinding.single receives `field.Args`, the encoded positional tuple.
+   - Binding.independentBindings destructures it by position. For example, Bindings.lean:148
+     reads `fun request parent key => ... ⟨key⟩`.
+   - Args_i_j, its pack/unpack and arg_k_name (Generated.lean:33-81) are referenced only by
+     their own theorems and the fixture examples. Neither the adapter nor any binding consumes
+     them.
+   Consequences:
+   - The generator cannot swap arguments today, because it never touches them. That is safe,
+     but it holds because nothing is generated there, not because of the records.
+   - For a multi-argument field, nothing ties the user's positional destructuring to argument
+     names. A user who writes `fun _ _ (right, left, _) => ...` gets no argument-identity
+     diagnostic. Only that field's domain proof could catch it.
+   - Every G2 fixture is standalone (pairArguments) or uses dummy bindings
+     (GeneratorFixture). No executed field has two or more arguments.
+   Fix: choose one of the following.
+   (a) Make the binding boundary name-based. independentBindings (or a generated adapter
+       wrapper) reads arguments through ArgumentRecord and NamedArgument, for example a
+       FieldBinding single over ArgumentRecord, unpacked by the adapter, with a proved
+       conversion law. Then add one executed multi-argument field and a swap fixture.
+   (b) Narrow the status: the records are optional, name-checked helpers. Resolver argument
+       identity remains the application's positional responsibility and is covered only by its
+       domain proofs. Record (a) as an S5 obligation, since S5 coerces named arguments.
+   (b) is enough for S2b closure, because the tenant has one argument.
+L1 (Low) The mutation diagnostic is indirect.
+   - mutation.log shows two "omega could not prove the goal" errors at Mutated.lean:121. They
+     come from the fallback branch of `first | rfl | simp [ast] ... <;> omega`. The agreement
+     goal that fails is never printed.
+   - The harness accepts any error inside the adapter_agreement line range.
+   The test is valid as a differential, since the original builds with the same script. But a
+   future tactic change that breaks that range for another reason would be harder to tell
+   apart. Fix: also emit, in mutation mode only, a positive theorem
+   `¬ BindingAgreement independentBindings (adapter application)`, as S2a's
+   swapped_wrapper_rejected did. Alternatively, make the out-of-range branch fail with a
+   distinct message, and match the unsolved goal mentioning Project.id.
+L2 (Low) The benchmark measures schema correspondence only.
+   - The generated adapter_agreement (owners × maxFields case split with simp and omega
+     fallbacks) and the three per-field argument theorems (2,400 at 800 fields) are not
+     measured.
+   - So "separate argument and binding proofs" (status) is not chosen on measured data, and
+     only the monolithic-versus-per-object question is.
+   - No scalability claim is made, so this does not block. Measure a generated 800-field
+     artifact end to end before S8 or any larger schema.
+L3 (Low) The generated and hand-written schema evidence are joined only by definitional
+   unfolding.
+   - Generated.indexed (match lambdas) and Binding.indexedSchema (Planning.schema.fields plus an
+     `if` layout) are different terms.
+   - Runtime.run (Generated.adapter …) and application_agreement typecheck only because the two
+     closed terms reduce to each other.
+   - A drift between them would show up as a confusing type mismatch in S2bProofs.
+   Fix: add explicit pins, for example
+   `Generated.indexed.schema = Binding.indexedSchema.schema := rfl` and an argumentLayouts
+   equality, so the failure is local and named.
+L4 (Low) adapter_agreement covers only records of the form fromCanonical b.
+   - A Resolvers value built directly by its named fields is outside every theorem.
+   - Today nothing does that, and fromCanonical is the only entry. State in the status, or in a
+     generated comment, that BindingsByField is the only supported input and Resolvers is
+     internal. Otherwise, a future user filling the named record could assume coverage that
+     does not exist.
+L5 (Low) Encoding facts are checked per artifact.
+   - There is no general lemma that WellFormedSchema implies
+     argumentsEncoding args = some (argumentCode args).
+   - The emitted `Args_i_j.pack (value : (checked.field …).Args)` typechecks by per-artifact
+     reduction of indexed.fields against argumentCode. argumentKind's `.unit` fallback is sound
+     only because of WellFormedSchema.
+   - A general lemma would make the argument-record API usable without kernel unfolding.
+   Cosmetic: the generated file triggers an unused-simp-argument warning at
+   Generated.lean:109 (`simp [ast]`).
+
+LATER-SLICE BOUNDARIES
+S4b  Next. Batch-load transformation, response equivalence, authorization preservation, and the
+     backend-call bound. The generated batch slot is preserved and ready.
+S5   Text/variable coercion and named argument handling (see M1(a)). Parser faithfulness
+     remains a per-artifact equality with demoAst, not a parser theorem.
+S6   Certified external handlers.
+S8   End-to-end generator scaling measurements (L2).
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s2b-claude-review.txt

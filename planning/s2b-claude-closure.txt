@@ -1,0 +1,102 @@
+S2b CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s2b-claude-review.txt (M1, L1-L5), s2b-review-resolution.adoc, the
+updated s2b-status.adoc, and the roadmap S5 and S8 additions.
+
+Files changed since my S2b review (by timestamp):
+- GraphQL/Plan/Arguments.lean and Generate.lean.
+- Example/Tenant/Generated.lean (regenerated) and S2bProofs.lean.
+- scripts/generate_s2b.py.
+I read each change, plus the generated .lake/generator-tests/mutation-witness.log.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s2b-closure.out:
+- 445 audit reports: 376 with axioms (propext, Quot.sound, Classical.choice only) plus 69 that
+  use no axioms. No sorryAx.
+- All 26 expected compile failures pass.
+- The generator checks pass: exact regeneration, the mutation rejected in adapter_agreement,
+  the new positive mutation witness, and the broader reordered and multi-argument fixture.
+- The native demo on the generated adapter passes, as do the semantic and SDL tests.
+- Generated.lean now produces no warnings. The remaining warnings are in files S2b did not
+  change.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+VERDICT: S2b IS CLOSED. THERE ARE NO REMAINING BLOCKERS.
+With S2b closed, the roadmap's first proved application milestone is reached: the generated
+route runs the actual S4 executor and inherits its theorems for every request and checked P1
+operation.
+
+FINDING STATUS
+M1 RESOLVED by option (b), which my review accepted for S2b.
+   - s2b-status.adoc (around L38-45) now says the argument records and name-checked accessors
+     are optional helpers that are not used when resolvers run.
+   - It says FieldBinding.single consumes the positional encoding, that positional
+     interpretation is the application's obligation covered by its domain proofs, and that the
+     tenant has a single argument.
+   - Roadmap S5 (around L693) now requires named coercion at the resolver boundary, an executed
+     multi-argument field, and a same-typed argument-swap rejection. The obligation is
+     assigned, not dropped.
+L1 RESOLVED.
+   - In mutation mode, generate_s2b.py builds MutationWitness.lean from the actual mutated
+     artifact: the mutated adapter dispatch and the application, with only the false
+     agreement certificates removed.
+   - It proves mutation_disagrees : ¬ BindingAgreement independentBindings (adapter
+     application). The proof evaluates Project.id at Checks.ownedProject, where the title
+     "public" differs from the id "shared".
+   - The axiom line is parsed and checked against the allowlist. In this run it shows propext,
+     Classical.choice and Quot.sound.
+   - This matches the positive form of S2a's swapped_wrapper_rejected. Rejection now rests on
+     a kernel-checked disagreement as well as on the earlier differential failure.
+L2 RESOLVED.
+   - The status (around L108) limits the measured conclusion to the choice between monolithic
+     and per-object correspondence. It calls separate argument and binding proofs an
+     organizational choice.
+   - Roadmap L814 records the S8 obligation: measure a generated 800-field artifact end to end,
+     including adapter agreement and the argument theorems, before any larger-schema claim.
+L3 RESOLVED.
+   - generated_schema_pin (rfl) and generated_layout_pin (case analysis) in S2bProofs.lean:9-14
+     name the boundary between the generated and hand-written evidence. Both are audited.
+L4 RESOLVED.
+   - The generated comment at Generated.lean:83 and status L13-14 say that BindingsByField
+     through fromCanonical is the only supported input. Manually filled Resolvers records are
+     outside the theorem.
+   - They also say the application specialization is reflexive, and that the substantive
+     guarantees are the universal dispatch identity plus the separate domain proofs.
+L5 RESOLVED.
+   - arguments_encoding_code (Arguments.lean:15-32) proves: for every argument list and code,
+     argumentsEncoding args = some code implies code = argumentCode args. So the positional
+     encoding and the canonical argument record agree without per-artifact unfolding.
+   - The unused simp argument at Generated.lean:110 is gone.
+
+WHAT S2b ESTABLISHES
+- The generator is untrusted plumbing. Each artifact is admitted only by kernel-checked
+  evidence:
+  - the parsed SDL equals the independent demoAst;
+  - WellFormedSchema and Represents hold, including argument names and layouts;
+  - argument projection and both roundtrips hold for every field;
+  - the generated dispatch is the identity on every independently supplied BindingsByField
+    family.
+- The generator emits no resolver implementations or meanings. Bindings.lean and its domain
+  proofs are unchanged.
+- A consistent generator mutation of dispatch and metadata is rejected. A positive
+  disagreement proof is produced against the actual mutated output.
+- The batch capability slot, with its exact and key laws, survives generation unchanged.
+- Runtime equality with EvalSpec, authorization, conformance and tenant-view equality hold for
+  the generated adapter, through the existing S4 theorems. Nothing about the executor is
+  re-proved.
+
+LATER-SLICE BOUNDARIES (not S2b)
+S4b  Next. One scoped batch-load transformation:
+     - certified .batch calls using `compatible` and BatchCapability.exact;
+     - response equivalence and authorization preservation;
+     - a backend-call bound counting every primitive call.
+     No optimization claim exists today.
+S5   Text and variable coercion. Named arguments at the resolver boundary, an executed
+     multi-argument field, and a same-typed argument-swap rejection (from M1). Parser
+     faithfulness stays a per-artifact equality, not a parser theorem.
+S6   Certified effectful handlers, with refinement between the external store and the modeled
+     snapshot.
+S8   End-to-end generated 800-field measurement (from L2). The four list/nullability
+     combinations instantiated on an executed schema (from S4).
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s2b-claude-closure.txt

@@ -1,0 +1,49 @@
+= S6c: certified ordered response encoding
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+
+Status: CLOSED, 2026-11-07. Claude independently confirmed closure with no blockers
+in link:s6cd-claude-closure.txt[final review]. Full S6 is closed; see link:s6-status.adoc[S6 status].
+
+== Proof chain
+
+`GraphQL.Plan.WireScalar` defines independent character escape and positional decimal
+relations. Control bytes must be escaped; quotes/backslashes have explicit productions;
+other Unicode scalar characters are retained. All control characters use lowercase
+\u00XX escapes (including newline); legacy exact-byte expectations now reflect this
+valid JSON spelling. Decimal productions disallow leading
+zeroes. `escape_char_correct`, `quote_correct`, and `integer_correct` establish the
+actual implementation against those relations. `utf8_preserves` proves that the core
+UTF-8 decoder recovers the exact emitted character sequence.
+
+`GraphQL.Plan.WireEncoding.EncodesOrderedJSON` is an inductive compact JSON grammar.
+Its constructors do not call the encoder. Object members and array elements retain
+source order in the inductive correspondence. `encode_correct` proves the actual
+`GraphQL.ResponseValue.encode`, now total by a size measure, satisfies this grammar.
+The grammar covers the response value model (integer numbers, no Float). There is no
+formal JSON parser round-trip claim; a grammar is the roadmap's chosen alternative.
+Injectivity/unambiguity of the whole JSON grammar is not yet proved (optional review
+follow-up C-L1); the current theorem establishes encoding against its independent
+productions.
+The UTF-8 decoder round-trip is proved. Native tests additionally round-trip encoded
+strings and integers through Lean.Json.parse.
+
+`Example.Tenant.WireResponse` gives independent value, path, public-message, error-list,
+and data/errors envelope relations. It proves the conversion and composed encoder.
+`bubble_encodes_root_null` covers root bubbling; errors retain order and filtered
+indices. `AuthorizedWireResponse` requires an independently authorized structured
+response AND evidence that the emitted bytes encode it. `encodeAuthorized` constructs
+the proof-carrying bytes. Public error messages come from a closed vocabulary.
+
+== Validation and limits
+
+S6cProofs checks all 32 control characters, quotes, backslashes, Japanese and
+supplementary-plane Unicode, zero/negative/large integers, ordered fields, and the
+root-null error envelope. Independent judgments reject raw newlines, wrong Boolean
+text, shifted paths and dropped errors. Compile-failure fixtures exercise raw control
+and omitted-error construction. Shared-encoder changes also pass the legacy P0 HTTP
+regressions. The native compiler/runtime remain trusted; encoder proofs do not verify
+network delivery or claim resource bounds for arbitrarily large responses.
+
+Full local gate: scripts/check passed 696 proof-dependency reports and 48
+compile-rejection fixtures, plus native semantic tests and generated-code checks.

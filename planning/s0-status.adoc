@@ -1,0 +1,93 @@
+= S0 Implementation Status
+
+NOTE: Recorded milestone closure results used the former Python harness. Commands in this document show its current Lean replacement; historical measurements are unchanged.
+:revdate: 2026-11-04
+
+S0 is complete. Claude closed the specification-and-witness gate with no blockers;
+its recommended fixture additions are implemented and checked.
+The modules import only `Std` and each other. The runtime executor and generator
+are not dependencies of this independent specification.
+
+== Specification and evidence
+
+[cols="1,3",options="header"]
+|===
+|Module in `Example/Tenant/` |Deliverable
+|Model.lean |Arbitrary finite snapshots, separate tenant/relationship fields, closed errors, exact scalar projections
+|Occurrences.lean |Occurrence-returning lookup; `FirstOwned` records every skipped row; first-match and value-correspondence proofs
+|Selection.lean |Independent surface syntax, declarations, and validity; unique field names
+|Response.lean |Explicit field shapes, ordered values, paths, completion; declaration/shape agreement and all four list/nullability cases
+|Evaluation.lean |Independent domain meanings and total, fuel-free `EvalSpec`; explicit `SuccessConditions`
+|Authorization.lean |Hand-written `AuthTree`, `AuthField`, and `AuthItems`; independent erasure and `AuthorizedResponse`
+|Conformance.lean |Independent response-shape relation with no snapshot, principal, evaluator, or authorization dependency
+|Checks.lean, S0Proofs.lean |Successful and adversarial kernel-checked witnesses and counterexamples
+|===
+
+Authorization binds root lookups and relationships to exact selected occurrences,
+requires ownership of domain objects, and fixes each leaf's parent and projection.
+The query root and envelope have public structural rules. Erasure takes no snapshot
+or principal. Errors use closed codes and selected-field/filtered-index paths.
+
+The 78 tenant theorems include:
+
+* Duplicate IDs, foreign-before-owned lookup, and first-owned occurrence selection.
+* Rejection of real foreign members, copied-tenant forged records, wrong fields,
+  wrong parents, and a real foreign occurrence used as a provenance label.
+* Full authorization trees and conformance witnesses for success and both roadmap
+  bubbling cases, on the adversarial fixture snapshot with cross-tenant edges.
+* A nullable root becoming null and a non-null root list becoming `data: null`,
+  preserving exactly one error and its original path at filtered task index zero.
+* Successful sibling preservation, equal missing/foreign outcomes, and omission of
+  foreign tasks even when they refer to owned projects.
+* Rejection of full trees with forged or wrong-parent scalars, and rejection by
+  `EvalSpec` of spurious Unavailable errors even outside the success hypotheses.
+
+== Scope and review resolution
+
+F1 from the initial review is replaced by an actual occurrence-label rejection;
+F2 has real-foreign-member and wrong-parent fixtures. N1 is handled by occurrence
+lookup with first-match/value proofs, and N3 by explicit list/nullability shapes.
+
+P1 accepts string ID literals only; integer ID coercion is a declared restriction.
+Child authorization requires an owned parent. A decidable surface validator remains
+S1/S5 work. Malformed syntax has a total reference interpretation, but application
+guarantees require `ValidOperation`.
+
+Framework argument, exhaustion, and internal failures have prescribed paths and
+nullability in the authorization rules. Pure valid reference evaluation has no fuel
+or injected faults. Equality with that specification cannot invent public failures.
+
+`SuccessConditions` lists validity, unique IDs, owned root targets, and owned required
+relationship targets. These are not safety premises. Universal execution preservation
+and IR correspondence remain S1/S4 work. S0 does not prove the existing runtime correct.
+Authorization describes permitted derivations, not causal reads, implicit flows,
+timing, logs, or output noninterference; the future view theorem remains separate.
+
+== Validation
+
+`scripts/check` passes the build, existing semantic suite, generated-name
+fixtures, 83 theorem audits (78 tenant plus five existing declarations), and six
+compile-failure fixtures. All current public standalone tenant theorems are discovered automatically;
+reports are matched by name. Source guards include explicit axioms and kernel-check
+bypasses. The default build includes `Example.Tenant.S0Proofs` and its dependencies.
+
+The original review is preserved at link:s0-claude-review.txt[s0-claude-review.txt].
+
+Closure review: link:s0-claude-closure.txt[s0-claude-closure.txt]. The shadowed-owned-
+duplicate rejection and satisfiable-success-condition probes are now checked-in
+fixtures; the older value-level leaf relation is explicitly marked auxiliary.
+The final full check ran after those additions. The raw review describes the earlier
+74-theorem candidate and is preserved unchanged.
+
+== Follow-up obligations for S1 through S4
+
+* Prove universal consistency of the two specifications: valid operations evaluated
+  by the tenant reference semantics produce authorized responses. This is a useful
+  next proof before connecting the runtime executor.
+* Parameterize the generic completion error type for the separate bounded-list
+  application; the S0 tenant specification deliberately uses its own application error.
+* SuccessConditions are sufficient, stronger than necessary: they require all owned
+  task targets and global ID uniqueness. Sharpen them only if the broader theorem is needed.
+* Add the converse/none characterization of occurrence lookup when lowering needs it.
+* Extend or enforce the audit discovery syntax before using private or attribute-prefixed
+  theorem declarations. All current tenant declarations use its supported plain syntax.

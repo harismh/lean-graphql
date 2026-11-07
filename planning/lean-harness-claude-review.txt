@@ -1,0 +1,216 @@
+LEAN HARNESS MIGRATION REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-07.
+Scope: the Python-to-Lean validation harness migration. Review only.
+
+Read in full:
+- Harness/Common, Audit, FixtureData, Generator, Check, Http, HttpTests, SelfTest,
+  Benchmark, BenchmarkData and Main (.lean), plus Harness/README.md.
+- scripts/check and scripts/lake.
+- The lakefile testDriver entries.
+- planning/lean-harness-migration.adoc, and the command sections of README.md and
+  planning/release-2.0-draft.md.
+- The preserved Python baseline at /private/tmp/lg-python-harness-baseline:
+  - check.py and proof_audit.py;
+  - generate_s2b.py;
+  - test_http.py and test_s6_http.py;
+  - benchmark.py, benchmark_s2.py, benchmark_s2b.py and benchmark_s4b.py.
+  I compared each against its Lean replacement line by line.
+
+Ran, after confirming no project build was running and that
+/private/tmp/lg-lean-harness-final.log had completed:
+- `PATH=<stub dir>:$PATH scripts/check --all`, where the stub dir held python, python3 and
+  python3.15 stubs that record an invocation marker and exit 97.
+  - Exit 0 in 49 s, on an already-built tree. Output in
+    .lake/review5/lean-harness-all.out.
+  - No marker was created, so nothing invoked Python.
+  - Results:
+    - audit, HTTP-framing and process self-tests pass;
+    - the build and native suites pass;
+    - generator determinism, mutation rejection, positive witness and fixture pass;
+    - 696 proof reports pass, matching the reported inventory;
+    - all 48 compile rejections pass;
+    - certified HTTP 30/30 and legacy HTTP 35/35 pass.
+- After the run I listed processes (sleep 20 / trap loops / graphql-certified /
+  graphql-demo / graphql-check) and found none left over.
+- `scripts/check --bogus` exits 1 with usage. `scripts/check --self-test` started from /tmp
+  exits 0, so the bootstrap does not depend on the working directory.
+- `scripts/check --benchmark batch`, with Python shadowed: exit 0. The measurement array is
+  identical to planning/s4b-call-benchmark.json: capacities 1/2/3/4 give 3/2/1/1 stage
+  calls and 10/9/8/8 whole-program calls. I compared the files with a local python3 -I
+  one-liner as a review tool; the harness itself does not use Python.
+- `scripts/check --benchmark s2 --smoke`, with Python shadowed: exit 0, and RSS was parsed.
+- I did not run the full s2, s2b or prototype benchmarks. They are long and were not asked
+  for; your smoke and full runs are reported in your log.
+No implementation, roadmap or planning file was edited apart from this report. No agents were
+started.
+
+Process-safety disclosure: before your safety note arrived, I ran one broad cleanup command
+during this review, `pkill -f "sleep 30"`. It was meant to remove two `sleep 30` processes
+from my own /bin/kill syntax probe. A pattern match like that could also have hit an
+unrelated `sleep 30` belonging to another session. Since your note I have only listed
+processes and have not killed any. I apologize for the broad pattern.
+
+VERDICT: APPROVED. NO BLOCKERS.
+- Coverage of the Python harness is preserved. In several places the Lean version is
+  stricter.
+- The audit fails closed.
+- Process cleanup and deadlines behave as claimed, and the self-tests and leftover-process
+  check confirm it.
+- Python is genuinely not needed.
+- One Medium robustness item (fixed deadlines) and some Low items follow.
+
+COVERAGE PARITY (verified line by line)
+Check.run against check.py:
+   - Same steps in the same order:
+     1. build;
+     2. generator --check plus mutation;
+     3. graphql-tests and graphql-tenant;
+     4. the GeneratedNames and TenantSDL fixtures;
+     5. proof sources (Example/Tenant/** ∪ GraphQL/Plan/**, sorted);
+     6. audit self-test;
+     7. a generated import-and-print file, together with Tests/Axioms.lean;
+     8. the source guard over GraphQL/** ∪ Example/Tenant/**;
+     9. the rejection fixtures.
+   - FixtureData.rejections matches all 48 Python entries and their needles exactly,
+     including the four entries Python wrote as bare strings. Matching is case-insensitive
+     and requires every needle, as in Python.
+Audit against proof_audit.py:
+   - mask follows code_only: nested block comments, line comments, strings with escapes,
+     and the char-literal rule ('x', '\n', '\xHH', '\uHHHH', with identifier apostrophes
+     left visible).
+   - discover enforces the same restricted style:
+     - exactly one namespace line and one namespace token;
+     - no `private`;
+     - column-zero `theorem NAME` with an ASCII identifier;
+     - the theorem-or-lemma token count must equal the discovered headers;
+     - no duplicates.
+     All seven Python negative headers are re-tested.
+   - Report parsing is stricter than Python's regex scan:
+     - every line beginning with "'" must be a well-formed report;
+     - multiline dependency lists are joined, and an unterminated one is rejected;
+     - each dependency must be in {propext, Classical.choice, Quot.sound};
+     - the name multiset must equal the expected multiset, which is nonempty.
+     The self-tests cover sorryAx, malformed, truncated, multiline-forbidden, missing,
+     duplicate and wrong-name reports.
+   - sourceGuard is the same token set as Python's \b regex. It is slightly stricter: it
+     strips whitespace before "decide+native" and "@[extern", so "@[ extern" is caught.
+Generator against generate_s2b.py:
+   - Identical: byte-for-byte regeneration, the two mutation markers, diagnostics confined
+     to the [adapter_agreement, def application) line range, and the same witness splice
+     (prefix, application..application_agreement, witness, end).
+   - The positive witness is now checked with verifyReports, which requires exactly one
+     allowed report. That is stricter than Python's regex.
+   - The fixture appendix is the same text.
+HttpTests against test_s6_http.py and test_http.py:
+   - All 30 and all 35 assertions are present, with the same inputs, statuses, messages and
+     exact-byte checks. I counted both.
+   - Concurrency: 8 concurrent nested-fragment requests (dedicated tasks, each a client
+     process) plus a foreground request.
+   - Disconnect: a separate client sends a partial body and exits, then recovery is
+     checked.
+   - Fault modes: all five certified launch modes, each with redaction and a
+     preparation-first check.
+Benchmark against the four Python runners:
+   - batch keeps the exact count invariants (optimized = ceil(unique/capacity),
+     reference 5, whole 12, whole-optimized = 7 + optimized, four cases).
+   - s2 keeps the same three sources, with 300 × 10 at full size.
+   - s2b and prototype keep the workloads, and prototype keeps the artifact-reuse check
+     (bytes and mtime).
+   - `--smoke` variants are additions.
+
+FAIL-CLOSED AND PROCESS BEHAVIOR
+- capture:
+  - spawns with setsid, so the child is in its own group;
+  - drains stdout and stderr on dedicated tasks;
+  - polls against a monotonic deadline.
+- On timeout, stopChild sends Child.kill, which signals the whole group for a setsid child.
+  If the leader is not reaped within 1 s, it sends `/bin/kill -KILL -- -pgid` and reaps.
+  I checked that macOS /bin/kill accepts the `-- -pgid` form.
+- If the leader exits while a descendant still holds a pipe, the loop keeps waiting until
+  the deadline, throws Timeout, and kills the group. So a pipe-holding descendant fails
+  closed rather than hanging. SelfTest covers both shapes (a TERM-ignoring loop, and
+  `sleep 20 & exit 0`) and requires completion within 5 s.
+- withServer: the readiness deadline is 15 s, an early exit is detected, the group is
+  killed in `finally` even when an assertion fails, and logs are written.
+- The HTTP client is a separate process, so the parent's 10 s deadline bounds sockets. The
+  response is capped at 2 MiB. Content-length and chunked framing are checked independently
+  of the server, with duplicate, conflicting, truncated and wrong-length responses
+  rejected, and self-tests for those cases.
+- No leftover processes after the full --all run.
+
+PYTHON REQUIREMENT AND USABILITY
+- All nine scripts/*.py files are gone, along with scripts/__pycache__.
+- The only Python mentions in current documents are statements that Python is not required.
+  Historical reviews are preserved.
+- `scripts/check` and `scripts/lake test [-- args]` both work. Usage errors exit nonzero.
+  The bootstrap is independent of the working directory.
+
+FINDINGS
+MEDIUM
+M1 Fixed, non-configurable deadlines can fail a slow but correct run.
+   - The full `lake build` inside Check.run and the benchmark and generate paths has a hard
+     600 s deadline. Each rejection or generated fixture has 60 s, and each aggregate audit
+     180 s.
+   - The Python check.py had no deadline on the build or audits; only the two named fixtures
+     had 60 s.
+   - On a cold clone (fetching LeanIO, then building every decide +kernel module) or a slow
+     CI runner, the build could exceed 600 s. The harness would then kill a healthy build and
+     report a Timeout.
+   - The build output is also buffered until it completes, so no progress is shown for up to
+     10 minutes.
+   - This is not a correctness problem. Successful runs are unaffected, and on a warm tree
+     everything takes about 50 s.
+   Recommended: an environment override (for example a timeout scale, or "none" for the
+   build), or no deadline for `lake build` with streamed output. Document cold-build
+   expectations in Harness/README.md.
+
+LOW
+L1 The suite totals "All 30 certified…" and "All 35 legacy…" are fixed strings, not counts of
+   executed checks; Python counted them. A future edit that drops a check would still print
+   30 or 35. Count the `check` calls, or assert the count.
+L2 The source guard keeps Python's blind spots. Attributes not first in a list
+   (`@[inline, extern …]`) and `attribute [extern …] f` / `attribute [implemented_by …] f`
+   are not caught. This is parity, not a regression, and the docs correctly call it a
+   source guard. It is cheap to strengthen: scan for the extern/implemented_by tokens inside
+   any attribute list or `attribute [` form.
+L3 JSON assertions use Lean.Json, which the server also uses for request decoding. A bug that
+   is symmetric between Lean.Json's compress and parse would go unseen. The response side
+   uses the project's own proved encoder, so the main exposure is the request envelope. This
+   is documented accurately in Harness/README.md and the migration document.
+L4 Benchmarks rely on /usr/bin/time, which needs `-v` on Linux. GNU time is not installed by
+   default on many Linux distributions. This affects benchmarks only, not the gate.
+   Mention the package in Harness/README.md.
+L5 Benchmark outputs and historical files.
+   - New reports go to .lake/benchmarks/*.json. planning/s4b-call-benchmark.json and
+     s2a-benchmark.json are no longer refreshed, and the s4b report drops Python's
+     `workload` field and shortens `scope`.
+   - s4b-status.adoc:104-105 says the planning JSON is "now available as scripts/check
+     --benchmark batch". That reads as if the command writes the planning file.
+   Suggested wording: "historical; rerun with … (writes .lake/benchmarks/s4b.json)". The
+   measurement values do still match exactly.
+L6 Several status documents now attribute historical gate results to `scripts/check`, which
+   did not exist when those results were produced with `python3 scripts/check.py`. Examples:
+   s6a-status.adoc:68, s6b-status.adoc:79, s6c-status.adoc:46. A short "(then
+   scripts/check.py)" or "the validation gate" would keep the record accurate.
+L7 Smaller behavioral differences, all acceptable:
+   - The legacy nested-fragment 2 s bound now includes the client process's spawn time,
+     which is slightly stricter and could flake under heavy load.
+   - Legacy requests now carry an Authorization header that Python did not send; this is
+     harmless.
+   - A pipe-holding descendant costs the full deadline before failing.
+L8 Bookkeeping: lean-harness-migration.adoc still says "independent Claude review pending".
+   The docs moved from README.adoc and release-2.0-draft.adoc to .md after my docs-2.0
+   closure. I spot-checked the .md links (all resolve) and command sections. I did not
+   re-review the Markdown conversion in full.
+
+TRUST BOUNDARY (accurately stated in Harness/README.md and the migration document)
+The harness is ordinary executable Lean, outside the proved core. It relies on:
+- POSIX process groups, /bin/kill and /usr/bin/time;
+- loopback sockets;
+- Lean.Json for assertions;
+- Lake and the Lean compiler.
+The kernel still checks the application proofs. The harness checks inventories,
+diagnostics and native behavior. The migration changes no application proof and adds
+nothing from P3.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/lean-harness-claude-review.txt

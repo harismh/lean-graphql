@@ -1,0 +1,117 @@
+S4b CLOSURE REVIEW
+Reviewer: Claude (Opus 5.5). Date: 2026-11-05.
+Checked against: planning/s4b-claude-review.txt (M1, M2, L1-L4), s4b-review-resolution.adoc,
+the updated s4b-status.adoc, and the roadmap S6 additions.
+
+Files changed since my S4b review (by timestamp):
+- GraphQL/Plan/Batch.lean (count_bind).
+- Example/Tenant/BatchAccounting.lean (new), BatchExecution.lean, Resolved.lean
+  (lower_clean, checked_unique), S4bProofs.lean, Demo.lean.
+- Tests/BatchWrongWave.lean and its check.py pin.
+- scripts/benchmark_s4b.py.
+I read each change.
+
+Ran: python3 scripts/check.py. Exit 0. Output in .lake/review5/check-s4b-closure.out:
+- 517 audit reports: 443 with axioms (propext, Quot.sound, Classical.choice only) plus 74 that
+  use no axioms. No sorryAx.
+- All 31 expected compile failures pass, including BatchWrongWave.
+- The native, semantic and generation checks pass.
+- Every new theorem appears in the audit: count_bind, reference_accounting_any,
+  optimized_accounting_any, total_savings, dispatcher_total, lower_clean, checked_unique,
+  execute_eq_runtime_any, wrong_wave_rejected, wrong_wave_loses_errors and whole_path_counts.
+
+Ran: python3 scripts/benchmark_s4b.py (exit 0). The rewritten
+planning/s4b-call-benchmark.json is byte-identical to the saved copy
+(.lake/review5/s4b-bench-closure-before.json). It reports, for B = 1/2/3/4:
+- stage: 3/2/1/1 calls against 5;
+- whole program: 10/9/8/8 calls against 12.
+My earlier scratch probe gave 9 against 12 at B = 2, and whole_path_counts now pins that in the
+kernel.
+
+No implementation, roadmap or planning file was edited apart from this report. The benchmark
+rewrite left the file identical. No agents were started.
+
+VERDICT: S4b IS CLOSED. THERE ARE NO REMAINING BLOCKERS.
+
+FINDING STATUS
+M1 RESOLVED.
+   - count_bind (Batch.lean:41-49) proves
+     runCount(m >>= k) = runCount m + runCount(k (runMachine m)) for every resolver.
+   - reference_accounting_any and optimized_accounting_any (BatchAccounting.lean) break down the
+     whole emitted programs, for any resolver, into setup + |positions| or ceil(U/B) + output.
+     They use that resolver's actual prepared value and output continuation. Setup and output
+     are counted, not assumed zero.
+   - Under the exact driver, optimized_total rewrites the wave outcomes to the sequential ones
+     through rows_wave_exact and sequential_exact, so both programs have the same output term.
+   - total_savings is optimized + |positions| = reference + ceil(U/B), for every request, child
+     and B > 0.
+   - dispatcher_total carries the breakdown to the public Batching.execute when recognition
+     succeeds.
+   - Limiting the shared-output saving to the exact driver is correct: arbitrary answers can
+     change how much work the output stage does.
+   - The regression I described (extra Task.project singles in finish, or running sequential
+     as well) would now change outputCount or the breakdown, and break total_savings or
+     whole_path_counts.
+   One note, not blocking: the general accounting compares against the staged `reference`.
+   That Runtime.execute issues the same number of calls is pinned only on the fixture (12),
+   and the status says so.
+M2 RESOLVED.
+   - s4b-status.adoc:67 now calls the ownership, representative and compatibility facts
+     ingredient lemmas, not Sat for the optimized machine.
+   - Status L128-132 and roadmap S6 (L735-737) record the S6 prerequisite:
+     - Sat over the fault contracts for the optimized machine, for permitted preparation
+       answers;
+     - owned representatives and compatibility;
+     - positional fault reconstruction;
+     - whole-batch transport failure as a distinct declared outcome, never scattered as
+       per-key failures.
+   - No faulting or external handler is attached to the optimized path in S4b.
+L1 RESOLVED.
+   - lower_clean shows IR.lower returns exactly ⟨resolved, clean⟩ for every clean resolved
+     selection. checked_unique follows: any two IR.Checked values for the same surface are equal.
+   - execute_eq_runtime_any (BatchExecution.lean:62-73) proves dispatcher equality with
+     Runtime.run for every deterministic adapter, without BindingAgreement.
+   - The agreeing version is now a corollary. Authorization and conformance still need
+     agreement, which is correct.
+L2 RESOLVED.
+   - wrongPositionWave keeps the actual wave and changes only the scatter continuation, which
+     now selects result 0 for every occurrence.
+   - wrong_wave_rejected proves it differs from rowsWave at occurrence (0,2) on the fixture,
+     where one outcome succeeds and the other fails.
+   - wrong_wave_loses_errors proves that the reconstructed response, using the actual finish,
+     loses all three expected errors.
+   - Tests/BatchWrongWave pins that equality of the two wave programs fails.
+L3 RESOLVED. The default demo computes the whole-program counts for Runtime.execute and
+   Batching.execute, requires after < before, and prints the computed numbers. The benchmark
+   computes U instead of hard-coding it.
+L4 RETAINED AS STATED. The recognition limits and the description of the re-lowered child are
+   unchanged and accurate.
+
+WHAT S4b ESTABLISHES
+- One certified batching transformation on the actual executable path: Batching.execute for
+  { projects { tasks { project { … } } } } with a present exact and keyed Task.project
+  capability. Every other operation falls back to the unchanged Runtime.execute.
+- Equality of the whole structured response with Runtime.run, for every deterministic adapter,
+  through the unchanged compiled child graph and output plan. Authorization and conformance
+  are inherited for every agreeing adapter.
+- Deduplication, representatives and U come from one request-scoped key whose sufficiency law
+  belongs to the same single backend. A batch cannot mix requests, and there is no cache.
+  Shared failures still appear at every original response occurrence.
+- An exact, answer-independent count of ceil(U/B) for the selected stage, in nonempty chunks of
+  at most B, and a whole-program breakdown with
+  optimized + |positions| = reference + ceil(U/B) under the exact driver.
+- The counts are Machine primitives. Neither physical requests nor latency is claimed, and the
+  pure capability is still a pointwise loop.
+
+LATER-SLICE BOUNDARIES (not S4b)
+S5  Operation text and variables, with named coercion at the resolver boundary, an executed
+    multi-argument field, and a same-typed argument-swap rejection (from S2b). Recognition must
+    apply to lowered text operations.
+S6  Sat and fault safety for the optimized machine, and whole-batch transport failure as a
+    declared outcome (M2). A physical backend with one request per primitive and no retries
+    before counts are read as requests. Certified effect handlers.
+S8  A general optimizer, multi-wave summation, recursive optimization of retained children,
+    proof that Runtime.execute and the staged reference issue the same number of calls in
+    general, and the 800-field generator scaling measurement.
+
+REVIEW COMPLETE /Users/hareisu/Developer/lean-graphql/planning/s4b-claude-closure.txt

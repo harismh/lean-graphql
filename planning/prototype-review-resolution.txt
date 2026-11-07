@@ -1,0 +1,110 @@
+LEAN GRAPHQL PROTOTYPE — RESPONSE TO CLAUDE REVIEW
+Date: 2026-11-02. Original report: prototype-claude-review.txt.
+Status: R1-R8 re-reviewed by Claude; no critical/high issues remain. Small residual
+fixes U2-U5/U7 passed checks and Claude's final closure review. U1/U6/U8 remain
+explicit next-milestone limitations.
+
+R1: Validation now has a single structural traversal, followed by scoped pairwise
+merge validation. It no longer expands each nested selection by every concrete
+runtime type, and fragment bodies are not revalidated through a second traversal.
+Both passes share 100000 work units; comparisons and traversal consume the budget.
+HTTP regression: 30 fragment/field nesting pairs completed in ~0.001 seconds, with
+an additional eight-request concurrent responsiveness check. No performance theorem
+is claimed. Depth, width, document size and work limits are explicit.
+
+R2: peek/expect check token kind as well as text. Positive list-string tests cover
+"]", "}", ":", "query"; quoted punctuation in syntax is rejected as a parse error.
+
+R3: Merge checks preserve declared scopes and compare response shapes even across
+mutually exclusive concrete branches, including nested child shapes. Field name and
+argument identity are required on potentially overlapping branches. Mutually exclusive
+parents propagate that exclusion into child comparisons. Three tests cover rejected
+leaf shapes, rejected nested shapes, and allowed disjoint aliases with matching shapes.
+Argument comparison remains order-sensitive, explicitly documented.
+
+R4: Directive variables must be Boolean!, including when a nullable variable has a
+non-null default. This is an explicit prototype restriction. Request variable coercion
+rejects null before execution, so a bad condition cannot erase sibling execution data.
+
+R5: Host type names are root-qualified. SDL types, argument records, per-object
+contracts, and helper functions occupy separate namespaces. Owner/field pairs use a
+literal dot (not allowed in GraphQL names). Recursive input definitions/decoders use
+scoped mutual blocks. Resolver entries, argument projections and enum/abstract constructors use an
+injective gql_ prefix. Input constructors retain mk and input.x parameter labels. This also
+fixes additional reproduced collisions with Lean's mk/rec and object type rec. Automatic
+deriving of enum Repr/BEq was removed to avoid generated instance-name collisions with
+legal SDL type names. Positive tests cover nested namespaces, host/helper-name clashes,
+A_b.c versus A.b_c, and recursive inputs. Names remain unchanged on the GraphQL wire.
+
+R6: Empty abstract sums use nomatch encoding. Composite classification uses schema
+kind rather than existence of a possible runtime object. An unused interface compiles,
+requires a selection, and accepts valid selections over its declared fields.
+
+R7: Resolvers and dispatchers are grouped per object. The outer resolver record holds
+one contract per object; no-argument fields use Unit. The real graphql_schema command
+now compiles 300 types/3000 fields. Generated declarations have scoped elaborator
+limits. scripts/benchmark.py now measures actual command generation separately from
+explicit data, and uses fresh child-process RSS accounting for each phase.
+Measured on this Mac (single runs):
+  Explicit data and kernel proof: 13.887 s, 5,431,951,360 bytes maximum RSS.
+  Full graphql_schema command:    27.589 s, 5,715,132,416 bytes maximum RSS.
+  Resolver-only implementation:   0.612 s; large schema artifact unchanged.
+The resolver measurement compiles ten Query resolvers importing the large module, not
+3000 application resolver implementations. The approximately 5.3 GiB full-generation
+peak remains a scalability problem for the next milestone. The original narrower
+benchmark is preserved as prototype-benchmark-before-review.json.
+
+R8a: Independent nesting and width limits for selections and input values. 300 sibling
+fields and 300 input-list entries now succeed. A shared work limit can reject wide
+queries before the parser's 4096-entry cap, with a specific diagnostic.
+R8b: Integer lexing rejects a missing digit and adjacent name/dot/minus, plus leading
+zeros. HTTP tests distinguish parse errors from validation errors.
+R8c: Accept parameter names are case-insensitive; Q=0 regression passes.
+R8d: prepareDetailed parses once and retains parse/validation error classification.
+The adapter returns client document/coercion diagnostics; resolver exceptions remain
+sanitized field errors.
+R8e: ValidCore rejects input-field arguments, reserved enum literals, reserved argument
+and enum names. Float cannot be redeclared as a string-backed custom scalar.
+
+P1-P5: README now labels reflection and definitional helper lemmas narrowly. It says
+explicitly that SDL-to-rawSchema faithfulness and full generated-bridge agreement are
+unproved; valid predicates do not guarantee metaprogram elaboration for every schema.
+Unsupported fragment forms, block strings, BOM and exact limits are documented. The
+proof audit remains limited to five selected declarations and source escape hatches.
+
+Still intentionally deferred: full GraphQL/schema validity, generated-to-generic typed
+agreement, generalized model/scalar carriers, executor/validator soundness, full
+introspection, mutation/subscription, federation, concurrency/cancellation, resolver-call
+and response-size budgets, deadlines, batching and cache services. The first slice is
+runnable; it is not a claim that P0 or service hardening is complete.
+
+FINAL RESIDUAL FIXES AFTER THE TARGETED RE-REVIEW
+U2: _root_ and names already starting SDL_ are injectively escaped with an SDL_ prefix
+in generated type/contract identifiers. Runtime schema names stay unchanged. Tests cover
+enums, recursive input objects, object contracts, and interfaces, including collision
+with the escape prefix. This does not reject otherwise legal GraphQL names.
+U3: The SDL parser rejects implements on input definitions.
+U4: WrongUnion now spells the absent constructor gql_Query. A separate WrongReference
+fixture applies the real gql_User constructor to a Ref "Query" and fails with a type
+mismatch, checking the reference index rather than only missing-name lookup.
+U5: The quoted-string scanner escapes a raw tab before its JSON decoding step. Semantic
+and real HTTP tests verify the decoded tab; GraphQL wire output encodes it as \u0009.
+U7: Documentation distinguishes prefixed API members from fixed input constructor and
+parameter names. No derived enum Repr/BEq is promised. The unused validation-mode branch
+of runtime collectFields was removed; it now always receives runtime variable values.
+
+Final checks: scripts/check.py passed all build/semantic/positive-generation checks,
+six intentional compile failures, and the five-declaration axiom audit. The HTTP suite
+passed 35 checks. The final names-only generator escape does not alter declarations in
+the recorded scalar benchmark; that expensive run was not repeated.
+
+Carried forward explicitly: U1 generator scaling for large single objects/input groups
+and high kernel-evidence memory, U6 pairwise merge cost (445 flat demo fields fit, 446
+exceed the work allowance), and U8 unmeasured large-schema validation cost. These are
+prototype limitations, not claims of production readiness. Next steps: input SCCs,
+profiled/indexed dispatch, merge groups by response key, mixed-feature benchmarks,
+and budget measurements on larger schemas. The raw review reports remain unchanged.
+
+Claude closure: planning/prototype-claude-closure.txt confirms U2, U3, U4, U5 and U7
+closed with no new findings in that scope. The reviewed first prototype slice is ready
+for continued development; full P0 and production readiness remain open.
